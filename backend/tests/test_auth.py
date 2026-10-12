@@ -45,6 +45,29 @@ def test_13_unverified_blocked(client, world):
     assert client.post("/api/orders/00000000-0000-0000-0000-000000000000/review", json={"rating": 5}, headers=h).status_code == 403
 
 
+def test_verification_can_be_switched_off(client, world, monkeypatch):
+    # Local development setting (REQUIRE_EMAIL_VERIFICATION=false): unverified users can buy and apply to sell.
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "require_email_verification", False)
+    seller = world.user(seller=True)
+    listing = world.listing(seller)
+    h = world.headers(world.user(verified=False))
+    assert client.post("/api/orders", json={"listing_id": str(listing.id)}, headers=h).status_code == 201
+    apply = {"display_name": "Shop", "bio": "", "phone": "9876543210", "upi_id": "me@okaxis"}
+    assert client.post("/api/seller/apply", json=apply, headers=h).status_code == 201
+
+
+def test_production_refuses_verification_off():
+    from app.config import Settings
+
+    s = Settings(environment="production", payment_mode="razorpay", jwt_secret="x" * 40,
+                 razorpay_key_id="k", razorpay_key_secret="s", razorpay_webhook_secret="w",
+                 require_email_verification=False)
+    with pytest.raises(RuntimeError, match="REQUIRE_EMAIL_VERIFICATION"):
+        s.check_startup()
+
+
 def test_16_no_account_enumeration(client, world, outbox):
     world.user("exists@example.com")
     a = signup(client, "exists@example.com")

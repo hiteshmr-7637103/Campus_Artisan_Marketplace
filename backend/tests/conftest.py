@@ -14,6 +14,7 @@ os.environ.update({
     "RAZORPAY_WEBHOOK_SECRET": "whsec_test_secret",
     "JWT_SECRET": "test-secret-test-secret-test-secret-123456",
     "RATE_LIMIT_ENABLED": "false",
+    "REQUIRE_EMAIL_VERIFICATION": "true",
     "BACKGROUND_TASKS_ENABLED": "false",
     "RESEND_API_KEY": "",
     "ALLOWED_EMAIL_DOMAINS": "",

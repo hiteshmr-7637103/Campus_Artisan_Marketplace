@@ -1,8 +1,9 @@
 // Money is always integer paise on the wire. Display only.
 export function formatINR(paise) {
+  const digits = paise % 100 === 0 ? 0 : 2; // ₹450, but ₹349.50 (never ₹349.5)
   return "₹" + (paise / 100).toLocaleString("en-IN", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   });
 }
 

@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from .config import get_settings
 from .db import get_db
 from .models import SellerStatus, User, UserRole
 from .security import decode_access_token
@@ -27,7 +28,8 @@ def current_user(
 
 
 def require_verified(user: User = Depends(current_user)) -> User:
-    if user.email_verified_at is None:
+    # REQUIRE_EMAIL_VERIFICATION=false skips the check (local development only; refused in production).
+    if get_settings().require_email_verification and user.email_verified_at is None:
         raise HTTPException(403, "Please verify your email first")
     return user
 

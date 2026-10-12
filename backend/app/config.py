@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     order_expiry_minutes: int = 30
     rate_limit_enabled: bool = True
     background_tasks_enabled: bool = True
+    # Off while the project is only run locally (no email provider yet). Must be on in production.
+    require_email_verification: bool = False
 
     @field_validator("jwt_secret")
     @classmethod
@@ -49,6 +51,8 @@ class Settings(BaseSettings):
             raise RuntimeError("PAYMENT_MODE must be 'mock' or 'razorpay'")
         if self.is_production and self.payment_mode == "mock":
             raise RuntimeError("PAYMENT_MODE=mock is not allowed when ENVIRONMENT=production")
+        if self.is_production and not self.require_email_verification:
+            raise RuntimeError("REQUIRE_EMAIL_VERIFICATION must be true when ENVIRONMENT=production")
         if self.is_production and self.jwt_secret.startswith("dev-only"):
             raise RuntimeError("Set a real JWT_SECRET in production")
         if self.payment_mode == "razorpay" and not (
