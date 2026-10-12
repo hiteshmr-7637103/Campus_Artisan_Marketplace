@@ -4,7 +4,7 @@ A two-sided marketplace connecting student artisans with campus buyers. Payment 
 platform** (Razorpay Payment Links); the platform keeps a commission and pays sellers out manually.
 Full spec: [`artisan-marketplace-requirements.md`](./artisan-marketplace-requirements.md).
 
-**Stack:** FastAPI (Python) · PostgreSQL · SQLAlchemy + Alembic · own JWT auth · React + Vite + TS + Tailwind.
+**Stack:** FastAPI (Python) · PostgreSQL · SQLAlchemy + Alembic · own JWT auth · React + Vite (JavaScript) + Tailwind, "CampCraft" design.
 
 ## 5-minute local setup
 
@@ -43,7 +43,7 @@ backend/app/    main.py, config.py, models.py, schemas.py, deps.py, security.py,
                 routers/ (auth, me, catalog, orders, seller, admin, webhooks),
                 services/ (payments.mark_order_paid, razorpay, email, uploads, contact)
 backend/alembic/  versioned migrations      backend/tests/  pytest suite
-frontend/src/   pages, components, lib/api.ts (fetch wrapper), lib/auth.tsx
+frontend/src/   pages/, components/, lib/api.js (the only file that calls the API), lib/auth.jsx
 docker-compose.yml  postgres + api
 ```
 

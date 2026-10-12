@@ -1,161 +1,95 @@
-import { useCallback, useEffect, useState } from "react";
-import {
-  approveListing,
-  createArtisan,
-  listArtisans,
-  listPendingListings,
-  listRecentListings,
-  rejectListing,
-} from "../../lib/admin";
-import { CATEGORY_LABEL } from "../../lib/types";
-import { formatINR, formatDate } from "../../lib/format";
-import { EmptyState, Notice, Spinner } from "../../components/ui";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { adminListingDecision, adminListings } from "../../lib/api";
+import { formatDate, formatINR } from "../../lib/format";
+import { LISTING_STATUS_LABEL } from "../../lib/types";
+import { showToast } from "../../lib/toast";
+import { EmptyState, Notice, Spinner, StatusBadge, useLoad } from "../../components/ui";
+
+const FILTERS = ["pending_review", "active", "rejected", "sold", "archived", ""];
 
 export function AdminListings() {
-  const [pending, setPending] = useState(null);
-  const [recent, setRecent] = useState([]);
-  const [artisans, setArtisans] = useState([]);
-  const [error, setError] = useState(null);
-
-  const refresh = useCallback(async () => {
-    setError(null);
-    try {
-      const [p, r, a] = await Promise.all([
-        listPendingListings(),
-        listRecentListings(),
-        listArtisans(),
-      ]);
-      setPending(p);
-      setRecent(r);
-      setArtisans(a);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load listings.");
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  if (error) return <Notice kind="error">{error}</Notice>;
-  if (pending === null) return <Spinner />;
+  const [status, setStatus] = useState("pending_review");
+  const { data: listings, error, reload } = useLoad(() => adminListings(status), [status]);
 
   return (
-    <div className="space-y-8">
-      <section>
-        <h1 className="text-lg font-semibold">Pending listings ({pending.length})</h1>
-        {pending.length === 0 ? (
-          <EmptyState title="Nothing waiting for review" />
-        ) : (
-          <ul className="mt-4 space-y-4">
-            {pending.map((l) => (
-              <PendingRow
-                key={l.id}
-                listing={l}
-                artisans={artisans}
-                onDone={refresh}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-sm font-semibold text-earth-muted">Recently processed</h2>
-        <ul className="mt-3 divide-y divide-earth-border text-sm">
-          {recent.map((l) => (
-            <li key={l.id} className="flex items-center justify-between py-2">
-              <span className="line-clamp-1">{l.title}</span>
-              <span className="text-earth-muted">
-                {l.status}
-                {l.reject_reason ? ` — ${l.reject_reason}` : ""}
-              </span>
-            </li>
+    <div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {FILTERS.map((f) => (
+          <button
+            key={f || "all"}
+            type="button"
+            aria-pressed={status === f}
+            onClick={() => setStatus(f)}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold ${
+              status === f ? "bg-earth-slate text-white" : "bg-white text-earth-muted border border-earth-border"
+            }`}
+          >
+            {f ? LISTING_STATUS_LABEL[f] : "All"}
+          </button>
+        ))}
+      </div>
+      {error && <Notice kind="error">{error.message}</Notice>}
+      {!error && !listings && <Spinner />}
+      {listings?.length === 0 && <EmptyState title="Nothing here" />}
+      {listings && listings.length > 0 && (
+        <ul className="space-y-4">
+          {listings.map((l) => (
+            <ListingRow key={l.id} listing={l} onDone={reload} />
           ))}
         </ul>
-      </section>
+      )}
     </div>
   );
 }
 
-function PendingRow({ listing, artisans, onDone }) {
-  const [mode, setMode] = useState("idle");
+function ListingRow({ listing: l, onDone }) {
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  const [artisanChoice, setArtisanChoice] = useState("new");
-  const [aName, setAName] = useState(listing.submitted_artisan_name);
-  const [aPhone, setAPhone] = useState("");
-  const [aEmail, setAEmail] = useState("");
-  const [aInsta, setAInsta] = useState("");
-  const [reason, setReason] = useState("");
-
-  async function doApprove() {
+  async function decide(decision) {
+    if (decision === "archive" && !window.confirm(`Archive “${l.title}”? It disappears from the shop.`)) return;
     setBusy(true);
     setErr(null);
     try {
-      let artisanId = artisanChoice;
-      if (artisanChoice === "new") {
-        if (aName.trim().length < 1) throw new Error("Artisan name is required.");
-        if (!aPhone && !aEmail && !aInsta) throw new Error("Add at least one contact method.");
-        artisanId = await createArtisan({
-          name: aName.trim(),
-          contact_phone: aPhone.trim(),
-          contact_email: aEmail.trim(),
-          instagram: aInsta.trim(),
-        });
-      }
-      await approveListing(listing.id, artisanId);
+      const r = await adminListingDecision(l.id, decision, reason.trim());
+      showToast(`${r.message}: ${l.title}`, decision === "approve" ? "✅" : "🗂️");
       onDone();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Approve failed.");
-      setBusy(false);
-    }
-  }
-
-  async function doReject() {
-    if (reason.trim().length < 1) {
-      setErr("Give a short reason.");
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    try {
-      await rejectListing(listing.id, reason.trim());
-      onDone();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Reject failed.");
+      setErr(e.message);
       setBusy(false);
     }
   }
 
   return (
-    <li className="card p-4">
-      <div className="flex gap-4">
+    <li className="card p-5 text-sm">
+      <div className="flex flex-col gap-4 sm:flex-row">
         <div className="flex shrink-0 gap-2">
-          {listing.photo_urls.map((u, i) => (
-            <img
-              key={u}
-              src={u}
-              alt={`${listing.title} ${i + 1}`}
-              className="h-20 w-20 rounded-lg border border-earth-border object-cover"
-            />
-          ))}
+          {l.images.length === 0 ? (
+            <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed border-amber-400 bg-amber-50 text-center text-[10px] font-semibold text-amber-800">
+              No photos
+            </div>
+          ) : (
+            l.images.map((u, i) => (
+              <a key={u} href={u} target="_blank" rel="noopener noreferrer">
+                <img src={u} alt={`${l.title} ${i + 1}`} className="h-20 w-20 rounded-lg border border-earth-border object-cover" />
+              </a>
+            ))
+          )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
-            <h3 className="font-medium">{listing.title}</h3>
-            <span className="text-xs text-earth-muted">{formatDate(listing.created_at)}</span>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h3 className="font-semibold text-earth-slate">{l.title}</h3>
+            <StatusBadge status={l.status} label={LISTING_STATUS_LABEL[l.status]} />
           </div>
-          <p className="text-xs uppercase tracking-wide text-earth-muted">
-            {CATEGORY_LABEL[listing.category] || listing.category} · artisan wants {formatINR(listing.price_artisan)}
+          <p className="text-xs text-earth-muted">
+            {l.category} · {formatINR(l.price_paise)} · by{" "}
+            <Link to={`/seller/${l.seller_id}`}>{l.seller_name}</Link> · {formatDate(l.created_at)}
           </p>
-          <p className="mt-1 whitespace-pre-wrap text-sm text-earth-slate">{listing.description}</p>
-          <p className="mt-2 text-sm">
-            <span className="text-earth-muted">Submitted as:</span> {listing.submitted_artisan_name}
-            {" · "}
-            <span className="text-earth-muted">contact:</span> {listing.submitted_artisan_contact}
-          </p>
+          <p className="mt-2 whitespace-pre-wrap text-earth-slate">{l.description}</p>
+          {l.reject_reason && <p className="mt-1 text-xs text-red-700">Rejected: {l.reject_reason}</p>}
         </div>
       </div>
 
@@ -165,77 +99,47 @@ function PendingRow({ listing, artisans, onDone }) {
         </div>
       )}
 
-      {mode === "idle" && (
-        <div className="mt-3 flex gap-2">
-          <button className="btn-primary" onClick={() => setMode("approve")}>
-            Approve…
-          </button>
-          <button className="btn-ghost" onClick={() => setMode("reject")}>
-            Reject…
-          </button>
+      {l.status === "pending_review" && l.images.length === 0 && (
+        <div className="mt-3">
+          <Notice kind="warn">This listing has no photos yet — consider rejecting until the seller adds some.</Notice>
         </div>
       )}
 
-      {mode === "approve" && (
-        <div className="mt-3 rounded-xl bg-stone-50 p-3">
-          <label className="field-label">Link to artisan</label>
-          <select
-            className="field-input"
-            value={artisanChoice}
-            onChange={(e) => setArtisanChoice(e.target.value)}
-          >
-            <option value="new">➕ Create new artisan</option>
-            {artisans.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-
-          {artisanChoice === "new" && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="field-label">Name</label>
-                <input className="field-input" value={aName} onChange={(e) => setAName(e.target.value)} />
-              </div>
-              <div>
-                <label className="field-label">Phone</label>
-                <input className="field-input" value={aPhone} onChange={(e) => setAPhone(e.target.value)} />
-              </div>
-              <div>
-                <label className="field-label">Email</label>
-                <input className="field-input" value={aEmail} onChange={(e) => setAEmail(e.target.value)} />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="field-label">Instagram</label>
-                <input className="field-input" value={aInsta} onChange={(e) => setAInsta(e.target.value)} />
-              </div>
+      {(l.status === "pending_review" || l.status === "active") && (
+        <div className="mt-4 border-t border-earth-border pt-4">
+          {rejecting ? (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                className="field-input"
+                placeholder="Reason (shown to the seller)"
+                maxLength={300}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+              <button type="button" className="btn-primary" disabled={busy || !reason.trim()} onClick={() => decide("reject")}>
+                Confirm reject
+              </button>
+              <button type="button" className="btn-ghost" disabled={busy} onClick={() => setRejecting(false)}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {l.status === "pending_review" && (
+                <>
+                  <button type="button" className="btn-primary" disabled={busy} onClick={() => decide("approve")}>
+                    Approve & publish
+                  </button>
+                  <button type="button" className="btn-ghost" disabled={busy} onClick={() => setRejecting(true)}>
+                    Reject…
+                  </button>
+                </>
+              )}
+              <button type="button" className="btn-ghost" disabled={busy} onClick={() => decide("archive")}>
+                Archive
+              </button>
             </div>
           )}
-
-          <div className="mt-3 flex gap-2">
-            <button className="btn-primary" onClick={doApprove} disabled={busy}>
-              {busy ? "Approving…" : "Confirm approve"}
-            </button>
-            <button className="btn-ghost" onClick={() => setMode("idle")} disabled={busy}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {mode === "reject" && (
-        <div className="mt-3 rounded-xl bg-stone-50 p-3">
-          <label className="field-label">Reason</label>
-          <input className="field-input" value={reason} onChange={(e) => setReason(e.target.value)} />
-          <div className="mt-3 flex gap-2">
-            <button className="btn-primary" onClick={doReject} disabled={busy}>
-              {busy ? "Rejecting…" : "Confirm reject"}
-            </button>
-            <button className="btn-ghost" onClick={() => setMode("idle")} disabled={busy}>
-              Cancel
-            </button>
-          </div>
         </div>
       )}
     </li>

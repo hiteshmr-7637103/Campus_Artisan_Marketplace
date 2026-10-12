@@ -3,16 +3,16 @@
 Implementation status of the v2 plan ([`artisan-marketplace-requirements.md`](./artisan-marketplace-requirements.md)):
 FastAPI + PostgreSQL backend, React frontend on top of it, Supabase removed.
 
-**Nothing is committed yet.** All changes are in the working tree.
+The frontend from the `frontend` branch (JavaScript, CampCraft design) is wired to this backend; Supabase and the mock data are gone.
 
 ## Verification so far
 
 | Check | Result |
 |---|---|
 | Backend tests (`pytest`) | 31 passed |
-| Frontend type-check and production build | Pass |
+| Frontend production build | Pass |
 | API in Docker (`/health`, `/docs`, listings, login, demo seed) | Called with curl; works |
-| Frontend pages clicked through in a browser | **Not done** |
+| Frontend clicked through in headless Chrome (browse, checkout + mock pay, review, seller listing + photo, admin approve/fulfil/payout, signup → verify → seller apply, password reset, mobile) | Pass, no console errors |
 | Razorpay (payment links, webhook signature) against live Razorpay | **Not tested** (needs your account keys) |
 
 ## Backend (`backend/`)
@@ -35,7 +35,7 @@ FastAPI + PostgreSQL backend, React frontend on top of it, Supabase removed.
 
 ## Frontend (`frontend/`)
 
-The Supabase client is replaced by `lib/api.ts` (fetch wrapper) and `lib/auth.tsx` (auth state and route guards).
+`lib/api.js` is the only code that calls the backend (access token in memory, refresh via the httpOnly cookie). `lib/auth.jsx` holds login state and route guards.
 
 Pages:
 - **Public:** browse with search and category filter, listing detail, seller profile.
@@ -71,5 +71,5 @@ Nothing else in the repo needed it.
 1. Sign up for Razorpay as an Individual/Unregistered Business and get the keys.
 2. Set `PAYMENT_MODE=razorpay` and `ENVIRONMENT=production`, and add the webhook (steps in [`SETUP.md`](./SETUP.md)).
 3. Make one real low-value payment end to end.
-4. Click through the frontend in a browser.
+4. Click through the frontend once more against the deployed API.
 5. Run `pip-audit` and `npm audit`, and turn on managed Postgres backups.
