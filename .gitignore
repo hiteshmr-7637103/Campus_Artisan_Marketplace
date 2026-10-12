@@ -5,7 +5,7 @@ frontend/node_modules/
 # build output
 frontend/dist/
 frontend/.vite/
-
+frontend1/
 # env
 .env
 .env.local

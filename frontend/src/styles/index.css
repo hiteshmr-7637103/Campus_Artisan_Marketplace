@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background-color: #FDFBF7;
+    color: #1E2229;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    @apply antialiased;
+  }
+  a {
+    @apply underline-offset-2;
+  }
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-brand-terracotta;
+  }
+}
+
+.font-editorial {
+  font-family: 'Fraunces', serif;
+}
+
+.custom-scroll::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: #E8E2D9;
+  border-radius: 9999px;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-terracotta text-white hover:bg-brand-clayDark shadow-xs active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply btn border border-earth-border bg-white text-earth-slate hover:bg-stone-50;
+  }
+  .field-label {
+    @apply block text-xs font-bold text-earth-slate uppercase tracking-wider mb-1.5;
+  }
+  .field-input {
+    @apply w-full rounded-xl border border-earth-border bg-white px-4 py-3 text-sm focus:border-brand-terracotta focus:ring-2 focus:ring-brand-terracotta/20 focus:outline-none;
+  }
+  .card {
+    @apply rounded-3xl border border-earth-border bg-white shadow-xs;
+  }
+}
