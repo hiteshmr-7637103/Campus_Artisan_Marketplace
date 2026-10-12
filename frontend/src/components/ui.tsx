@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 export function Spinner({ label = "Loading…" }: { label?: string }) {
   return (
@@ -38,4 +38,44 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
       {hint && <p className="mt-1 text-sm text-ink/60">{hint}</p>}
     </div>
   );
+}
+
+export function Field({
+  label, children, hint,
+}: { label: string; children: ReactNode; hint?: string }) {
+  return (
+    <label className="block">
+      <span className="field-label">{label}</span>
+      {children}
+      {hint && <span className="mt-1 block text-xs text-ink/50">{hint}</span>}
+    </label>
+  );
+}
+
+export function StatusBadge({ status }: { status: string }) {
+  const tone: Record<string, string> = {
+    active: "bg-green-100 text-green-800", paid: "bg-green-100 text-green-800", fulfilled: "bg-green-100 text-green-800",
+    approved: "bg-green-100 text-green-800",
+    pending_review: "bg-amber-100 text-amber-800", pending_payment: "bg-amber-100 text-amber-800", pending: "bg-amber-100 text-amber-800",
+    rejected: "bg-red-100 text-red-800", cancelled: "bg-ink/10 text-ink/70", refunded: "bg-ink/10 text-ink/70",
+    archived: "bg-ink/10 text-ink/70", sold: "bg-ink text-white",
+  };
+  return (
+    <span className={`rounded px-2 py-0.5 text-xs font-medium ${tone[status] ?? "bg-ink/10"}`}>
+      {status.replace("_", " ")}
+    </span>
+  );
+}
+
+/** Tiny data-loading hook: { data, error, reload }. */
+export function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []) {
+  const [data, setData] = useState<T | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(() => {
+    setError(null);
+    return fn().then(setData).catch((e: Error) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  useEffect(() => { void load(); }, [load]);
+  return { data, error, reload: load };
 }

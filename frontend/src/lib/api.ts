@@ -1,147 +1,144 @@
-import { supabase } from "./supabaseClient";
 import type {
-  Category,
-  FulfillmentMethod,
-  OrderView,
-  PublicListing,
-  PublicReview,
+  AdminListing, AdminOrder, AdminPayout, AdminSeller, Category, Listing, ListingPage, Metrics, Order,
+  SellerListing, SellerMe, SellerOrder, SellerPayout, SellerProfile, User,
 } from "./types";
 
-export class ApiError extends Error {}
+export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000/api";
 
-// Normalise a supabase.functions.invoke result: pull the server's { error }
-// message out of the non-2xx response body so the UI can show something useful.
-async function invoke<T>(name: string, body: object): Promise<T> {
-  const { data, error } = await supabase.functions.invoke(name, { body });
-  if (error) {
-    let msg = error.message;
-    // deno/supabase-js exposes the raw Response on error.context
-    const ctx = (error as { context?: Response }).context;
-    if (ctx && typeof ctx.json === "function") {
-      try {
-        const j = await ctx.json();
-        if (j?.error) msg = j.error;
-      } catch { /* keep default */ }
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status = 0) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// Access token lives in memory only. The refresh token is an httpOnly cookie the JS never sees.
+let accessToken: string | null = null;
+let refreshing: Promise<boolean> | null = null;
+
+export function setAccessToken(t: string | null) {
+  accessToken = t;
+}
+
+interface AuthResponse { access_token: string; user: User }
+
+// Concurrent callers share one refresh (refresh tokens rotate, so a second parallel call would fail).
+export function refreshSession(): Promise<boolean> {
+  refreshing ??= (async () => {
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+      if (!res.ok) return false;
+      accessToken = ((await res.json()) as AuthResponse).access_token;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setTimeout(() => (refreshing = null), 0);
     }
-    throw new ApiError(msg);
+  })();
+  return refreshing;
+}
+
+async function request<T>(path: string, init: RequestInit & { json?: unknown } = {}, retry = true): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  let body = init.body;
+  if (init.json !== undefined) {
+    headers.set("Content-Type", "application/json");
+    body = JSON.stringify(init.json);
   }
-  if (data && (data as { ok?: boolean }).ok === false) {
-    throw new ApiError((data as { error?: string }).error ?? "request failed");
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...init, headers, body, credentials: "include" });
+  } catch {
+    throw new ApiError("Cannot reach the server. Check your connection and try again.");
   }
-  return data as T;
+  if (res.status === 401 && retry && accessToken && !path.startsWith("/auth/")) {
+    if (await refreshSession()) return request<T>(path, init, false);
+  }
+  if (!res.ok) {
+    let msg = res.status >= 500 ? "Something went wrong on our side. Please try again." : `Request failed (${res.status})`;
+    try {
+      const j = await res.json();
+      if (j?.error) msg = j.error;
+    } catch { /* keep default */ }
+    throw new ApiError(msg, res.status);
+  }
+  return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
-// ---- listings (buyer-facing, from the *_public views) --------------------
+const post = <T>(path: string, json?: unknown) => request<T>(path, { method: "POST", json: json ?? {} });
+const patch = <T>(path: string, json: unknown) => request<T>(path, { method: "PATCH", json });
 
-export async function fetchListings(category?: Category | "all"): Promise<PublicListing[]> {
-  let q = supabase
-    .from("listings_public")
-    .select("*")
-    .eq("status", "active")
-    .order("created_at", { ascending: false });
-  if (category && category !== "all") q = q.eq("category", category);
-  const { data, error } = await q;
-  if (error) throw new ApiError(error.message);
-  return data as PublicListing[];
+// ---- auth ----
+export const signup = (b: { email: string; password: string; full_name: string; phone?: string }) =>
+  post<{ message: string }>("/auth/signup", b);
+export async function login(email: string, password: string): Promise<User> {
+  const r = await post<AuthResponse>("/auth/login", { email, password });
+  accessToken = r.access_token;
+  return r.user;
 }
-
-export async function fetchListing(id: string): Promise<PublicListing | null> {
-  const { data, error } = await supabase
-    .from("listings_public")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw new ApiError(error.message);
-  return (data as PublicListing) ?? null;
+export async function logout(): Promise<void> {
+  try { await post("/auth/logout"); } finally { accessToken = null; }
 }
+export const verifyEmail = (token: string) => post<{ message: string }>("/auth/verify-email", { token });
+export const resendVerification = () => post<{ message: string }>("/auth/resend-verification");
+export const forgotPassword = (email: string) => post<{ message: string }>("/auth/forgot-password", { email });
+export const resetPassword = (token: string, password: string) =>
+  post<{ message: string }>("/auth/reset-password", { token, password });
+export const getMe = () => request<User>("/me");
+export const updateMe = (b: { full_name?: string; phone?: string }) => patch<User>("/me", b);
 
-export async function fetchArtisanReviews(artisanId: string): Promise<PublicReview[]> {
-  const { data, error } = await supabase
-    .from("reviews_public")
-    .select("*")
-    .eq("artisan_id", artisanId)
-    .order("created_at", { ascending: false })
-    .limit(20);
-  if (error) throw new ApiError(error.message);
-  return data as PublicReview[];
+// ---- catalog ----
+export const fetchCategories = () => request<Category[]>("/categories");
+export function fetchListings(p: { category?: string; q?: string; page?: number }) {
+  const qs = new URLSearchParams();
+  if (p.category) qs.set("category", p.category);
+  if (p.q) qs.set("q", p.q);
+  if (p.page) qs.set("page", String(p.page));
+  return request<ListingPage>(`/listings?${qs}`);
 }
+export const fetchListing = (id: string) => request<Listing>(`/listings/${id}`);
+export const fetchSeller = (id: string) => request<SellerProfile>(`/sellers/${id}`);
 
-// ---- edge functions -----------------------------------------------------
+// ---- buyer ----
+export const createOrder = (listing_id: string) => post<Order>("/orders", { listing_id });
+export const fetchOrders = () => request<Order[]>("/orders");
+export const fetchOrder = (id: string) => request<Order>(`/orders/${id}`);
+export const reviewOrder = (id: string, rating: number, comment: string) =>
+  post<{ message: string }>(`/orders/${id}/review`, { rating, comment });
+export const simulatePayment = (id: string) => post<{ status: string }>(`/dev/simulate-payment/${id}`);
 
-export interface CreateListingInput {
-  artisan_code: string;
-  artisan_name: string;
-  artisan_contact: string;
-  category: Category;
-  title: string;
-  description: string;
-  price: number; // rupees
-  photo_urls: string[];
-}
-
-export function createListing(input: CreateListingInput) {
-  return invoke<{ ok: true; id: string }>("create-listing", input);
-}
-
-export async function uploadPhoto(file: File, artisanCode: string): Promise<string> {
+// ---- seller ----
+export interface ApplyInput { display_name: string; bio: string; phone: string; instagram?: string; upi_id: string }
+export const sellerMe = () => request<SellerMe>("/seller/me");
+export const sellerApply = (b: ApplyInput) => post<SellerMe>("/seller/apply", b);
+export const sellerListings = () => request<SellerListing[]>("/seller/listings");
+export const sellerListing = (id: string) => request<SellerListing>(`/seller/listings/${id}`);
+export interface ListingInput { title: string; category_id: string; description: string; price_paise: number }
+export const createListing = (b: ListingInput) => post<SellerListing>("/seller/listings", b);
+export const updateListing = (id: string, b: Partial<ListingInput>) => patch<SellerListing>(`/seller/listings/${id}`, b);
+export const archiveListing = (id: string) => post<SellerListing>(`/seller/listings/${id}/archive`);
+export function uploadImage(listingId: string, file: File) {
   const form = new FormData();
   form.append("file", file);
-  form.append("artisan_code", artisanCode);
-  const res = await invoke<{ ok: true; path: string }>("upload-photo", form);
-  // Build the public URL from the browser's Supabase origin, so it's correct in
-  // every environment (the edge function only sees an internal hostname locally).
-  return supabase.storage.from("product-photos").getPublicUrl(res.path).data.publicUrl;
+  return request<{ id: string; url: string; position: number }>(`/seller/listings/${listingId}/images`, { method: "POST", body: form });
 }
+export const deleteImage = (listingId: string, imageId: string) =>
+  request<{ message: string }>(`/seller/listings/${listingId}/images/${imageId}`, { method: "DELETE" });
+export const sellerOrders = () => request<SellerOrder[]>("/seller/orders");
+export const sellerPayouts = () => request<SellerPayout[]>("/seller/payouts");
 
-export interface CreateOrderInput {
-  listing_id: string;
-  buyer_name: string;
-  buyer_phone: string;
-  buyer_email: string;
-  fulfillment_method: FulfillmentMethod;
-  delivery_point?: string;
-  delivery_time?: string;
-  delivery_notes?: string;
-}
-
-export function createOrder(input: CreateOrderInput) {
-  return invoke<{ ok: true; short_url: string; access_token: string; order_id: string }>(
-    "create-order",
-    input,
-  );
-}
-
-export function notifyFulfilled(orderId: string) {
-  return invoke<{ ok: true; emailed: boolean }>("notify-fulfilled", { order_id: orderId });
-}
-
-// ---- RPCs -------------------------------------------------------------------
-
-export async function getOrderByToken(token: string): Promise<OrderView | null> {
-  const { data, error } = await supabase.rpc("get_order_by_token", { p_token: token });
-  if (error) throw new ApiError(error.message);
-  return (data as OrderView) ?? null;
-}
-
-export async function submitReview(token: string, rating: number, comment: string) {
-  const { data, error } = await supabase.rpc("submit_review", {
-    p_token: token,
-    p_rating: rating,
-    p_comment: comment || null,
-  });
-  if (error) throw new ApiError(friendlyReviewError(error.message));
-  return data as { ok: true };
-}
-
-export async function claimOrders(): Promise<number> {
-  const { data, error } = await supabase.rpc("claim_orders");
-  if (error) throw new ApiError(error.message);
-  return (data as number) ?? 0;
-}
-
-function friendlyReviewError(msg: string): string {
-  if (msg.includes("already exists")) return "You've already reviewed this order.";
-  if (msg.includes("not fulfilled")) return "This order isn't marked fulfilled yet.";
-  if (msg.includes("rating must be")) return "Please pick a rating between 1 and 5 stars.";
-  return msg;
-}
+// ---- admin ----
+export const adminSellers = () => request<AdminSeller[]>("/admin/sellers");
+export const adminSellerDecision = (id: string, decision: "approve" | "reject", reason?: string) =>
+  post(`/admin/sellers/${id}/decision`, { decision, reason });
+export const adminListings = (status?: string) => request<AdminListing[]>(`/admin/listings${status ? `?status=${status}` : ""}`);
+export const adminListingDecision = (id: string, decision: "approve" | "reject" | "archive", reason?: string) =>
+  post(`/admin/listings/${id}/decision`, { decision, reason });
+export const adminOrders = () => request<AdminOrder[]>("/admin/orders");
+export const adminOrderAction = (id: string, action: "fulfill" | "cancel" | "refund") => post(`/admin/orders/${id}/${action}`);
+export const adminPayouts = () => request<AdminPayout[]>("/admin/payouts");
+export const adminMarkPaid = (id: string, upi_txn_ref: string) => post(`/admin/payouts/${id}/mark-paid`, { upi_txn_ref });
+export const adminMetrics = () => request<Metrics>("/admin/metrics");

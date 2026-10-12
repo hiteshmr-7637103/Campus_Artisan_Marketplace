@@ -33,7 +33,7 @@ export function Privacy() {
 
       <h2 className="mt-5 font-semibold">Sharing</h2>
       <p className="mt-1 text-ink/80">
-        We use Supabase (database/hosting), Razorpay (payments) and Resend (email) as
+        We use managed hosting and database providers, Razorpay (payments) and Resend (email) as
         processors. We do not sell your data or share it for advertising.
       </p>
 

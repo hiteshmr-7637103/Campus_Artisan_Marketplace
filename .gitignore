@@ -12,12 +12,13 @@ frontend/.vite/
 .env.*.local
 frontend/.env
 frontend/.env.local
-supabase/.env
-supabase/functions/.env
+backend/.env
 
-# supabase local
-supabase/.branches/
-supabase/.temp/
+# python / backend
+backend/.venv/
+__pycache__/
+.pytest_cache/
+backend/uploads/
 
 # editor / os
 .DS_Store
@@ -28,3 +29,5 @@ npm-debug.log*
 
 # claude plan scratch
 .claude/
+
+

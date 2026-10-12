@@ -1,14 +1,16 @@
 import { Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { Guard } from "./lib/auth";
 import { Home } from "./pages/Home";
 import { Product } from "./pages/Product";
-import { Checkout } from "./pages/Checkout";
-import { OrderStatus } from "./pages/OrderStatus";
-import { AddListing } from "./pages/AddListing";
+import { SellerProfile } from "./pages/SellerProfile";
+import { Account, ForgotPassword, Login, ResetPassword, Signup, VerifyEmail } from "./pages/auth";
+import { Checkout, CheckoutReturn, MockPay, OrderDetail, Orders } from "./pages/buyer";
+import { ListingForm, SellApply, SellDashboard } from "./pages/sell";
+import { Admin } from "./pages/admin/Admin";
 import { Privacy } from "./pages/Privacy";
 import { Terms } from "./pages/Terms";
 import { NotFound } from "./pages/NotFound";
-import { Admin } from "./pages/admin/Admin";
 
 export default function App() {
   return (
@@ -16,14 +18,28 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="listing/:id" element={<Product />} />
+        <Route path="seller/:id" element={<SellerProfile />} />
+        <Route path="login" element={<Login />} />
+        <Route path="signup" element={<Signup />} />
+        <Route path="verify-email" element={<VerifyEmail />} />
+        <Route path="forgot-password" element={<ForgotPassword />} />
+        <Route path="reset-password" element={<ResetPassword />} />
+        <Route path="account" element={<Guard><Account /></Guard>} />
+        <Route path="checkout/return" element={<Guard><CheckoutReturn /></Guard>} />
         <Route path="checkout/:listingId" element={<Checkout />} />
-        <Route path="order/:token" element={<OrderStatus />} />
-        <Route path="sell" element={<AddListing />} />
+        <Route path="mock-pay/:orderId" element={<Guard><MockPay /></Guard>} />
+        <Route path="orders" element={<Guard><Orders /></Guard>} />
+        <Route path="orders/:id" element={<Guard><OrderDetail /></Guard>} />
+        <Route path="sell/apply" element={<SellApply />} />
+        <Route path="sell" element={<Guard need="seller"><SellDashboard /></Guard>} />
+        <Route path="sell/listings/new" element={<Guard need="seller"><ListingForm /></Guard>} />
+        <Route path="sell/listings/:id/edit" element={<Guard need="seller"><ListingForm /></Guard>} />
+        <Route path="sell/orders" element={<Guard need="seller"><SellDashboard /></Guard>} />
+        <Route path="admin/*" element={<Guard need="admin"><Admin /></Guard>} />
         <Route path="privacy" element={<Privacy />} />
         <Route path="terms" element={<Terms />} />
         <Route path="*" element={<NotFound />} />
       </Route>
-      <Route path="admin/*" element={<Admin />} />
     </Routes>
   );
 }
