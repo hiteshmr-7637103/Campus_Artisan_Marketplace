@@ -1,73 +1,50 @@
 # Campus Artisan Marketplace
 
-A campus-first, two-sided marketplace connecting student artisans with campus buyers.
-Payment happens **on the platform** via Razorpay — the platform takes a 10% commission,
-the rest is settled to the artisan manually by the founders.
+A two-sided marketplace connecting student artisans with campus buyers. Payment happens **on the
+platform** (Razorpay Payment Links); the platform keeps a commission and pays sellers out manually.
+Full spec: [`artisan-marketplace-requirements.md`](./artisan-marketplace-requirements.md).
 
-See [`artisan-marketplace-requirements.md`](./artisan-marketplace-requirements.md) for the
-full product spec and [`SETUP.md`](./SETUP.md) for how to configure the external accounts
-and run it.
+**Stack:** FastAPI (Python) · PostgreSQL · SQLAlchemy + Alembic · own JWT auth · React + Vite (JavaScript) + Tailwind, "CampCraft" design.
 
-## The core loop
-
-```
-browse → Buy Now → checkout (name/phone/email, no signup) → Razorpay hosted checkout
-  → webhook marks order Paid + listing Sold + emails buyer (with artisan contact)
-  → admin settles the artisan manually, marks order Fulfilled
-  → buyer gets a review prompt → 1–5★ rating shows on the artisan's listings
-```
-
-## Architecture
-
-| Component | Role |
-|---|---|
-| **`frontend/`** — React + Vite + TS + Tailwind | Storefront, product detail, checkout, order/review pages, `/sell` form, `/admin` panel. Deploys to Vercel. Talks to Supabase directly for reads/auth; calls edge functions for privileged writes. |
-| **Supabase** | Postgres (single source of truth), Auth (admin + optional buyer magic-link), Storage (product photos), Edge Functions. |
-| **Supabase Edge Functions** | `create-listing`, `create-order`, `razorpay-webhook`, `notify-fulfilled`. The only code that holds secrets or writes privileged fields. |
-| **Razorpay** | Hosted checkout via the Payment Links API. Buyer is redirected there and back. The `razorpay-webhook` function is the source of truth for whether an order is paid. |
-| **Resend** | Transactional email (order confirmation, review prompt), called from edge functions. |
-
-## Repo layout
-
-```
-frontend/                 Vite React app
-supabase/
-  migrations/              SQL schema, RLS policies, views, RPCs, storage policies
-  functions/
-    _shared/               cors, razorpay, resend, ratelimit, validation helpers
-    create-listing/        shared-code gate + validation + insert (status: pending)
-    create-order/          reads price server-side, creates order + Razorpay link
-    razorpay-webhook/       signature verify + idempotent Paid transition + email
-    notify-fulfilled/       admin-triggered review-prompt email
-SETUP.md                  external account + env + deploy guide
-```
-
-## Quick start (local)
+## 5-minute local setup
 
 ```bash
-# 1. frontend deps
-cd frontend && npm install && cd ..
+# 1. Postgres + API (runs migrations on start). API: http://localhost:8000, Swagger: /docs
+docker compose up -d --build
 
-# 2. supabase local stack (requires the Supabase CLI + Docker)
-npx supabase start
-npx supabase db reset          # applies everything in supabase/migrations
-npx supabase functions serve   # serves edge functions locally
+# 2. Optional demo data (admin/buyer/two sellers, password: demo-password-1)
+docker compose exec api python -m app.scripts.seed_demo
 
-# 3. env — copy and fill
-cp frontend/.env.example frontend/.env
-cp supabase/functions/.env.example supabase/functions/.env
-
-# 4. run the frontend
-cd frontend && npm run dev
+# 3. Frontend: http://localhost:5173
+cd frontend && cp .env.example .env && npm install && npm run dev
 ```
 
-Full details, including what to put in each env var and how to verify the security
-checklist, are in [`SETUP.md`](./SETUP.md).
+Defaults run in `PAYMENT_MODE=mock` (a fake checkout page) and print emails to the API console
+(`docker compose logs -f api`), so verification links work without any external accounts.
 
-## What is intentionally NOT built (per the requirements)
+Make yourself an admin (the only way to get admin): sign up in the UI, then
+`docker compose exec api python -m app.scripts.make_admin you@college.edu`.
 
-Stock/quantity tracking, product variants, seller dashboards, full-text search,
-recommendations, wishlists, in-app chat, a notification system, Razorpay Route auto-split
-payouts, refund automation, subscriptions, international payments, SEO, load optimization,
-automated test suites. The campus-map delivery-point picker is planned for later — the
-`orders` schema already has nullable `delivery_lat`/`delivery_lng` for it.
+## Tests
+
+```bash
+cd backend
+python -m venv .venv && .venv/bin/pip install -r requirements.txt
+docker compose exec db psql -U artisan -c "create database artisan_test" postgres   # once
+.venv/bin/pytest
+```
+
+The suite maps to the security checklist (section 9 of the spec); any failure is a launch blocker.
+
+## Layout
+
+```
+backend/app/    main.py, config.py, models.py, schemas.py, deps.py, security.py,
+                routers/ (auth, me, catalog, orders, seller, admin, webhooks),
+                services/ (payments.mark_order_paid, razorpay, email, uploads, contact)
+backend/alembic/  versioned migrations      backend/tests/  pytest suite
+frontend/src/   pages/, components/, lib/api.js (the only file that calls the API), lib/auth.jsx
+docker-compose.yml  postgres + api
+```
+
+See [`SETUP.md`](./SETUP.md) for configuration, Razorpay, email and deployment.
