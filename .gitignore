@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+frontend/node_modules/
+
+# build output
+frontend/dist/
+frontend/.vite/
+
+# env
+.env
+.env.local
+.env.*.local
+frontend/.env
+frontend/.env.local
+supabase/.env
+supabase/functions/.env
+
+# supabase local
+supabase/.branches/
+supabase/.temp/
+
+# editor / os
+.DS_Store
+*.log
+npm-debug.log*
+.idea/
+.vscode/
+
+# claude plan scratch
+.claude/

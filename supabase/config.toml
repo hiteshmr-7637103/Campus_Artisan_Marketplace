@@ -1,0 +1,46 @@
+project_id = "campus-artisan-marketplace"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173", "http://localhost:5173/**"]
+jwt_expiry = 3600
+enable_signup = true          # buyers self-serve a magic-link account; admins are added manually
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false   # magic-link / OTP only, no password confirmation flow needed
+
+[storage]
+enabled = true
+file_size_limit = "5MiB"
+
+# All functions do their own authorization (HMAC signature, shared artisan code,
+# rate limiting, or an explicit admin check via requireAdmin). Platform-level JWT
+# verification is left off so CORS preflight (which carries no Authorization
+# header) is never rejected before the function runs.
+[functions.razorpay-webhook]
+verify_jwt = false          # Razorpay signs with an HMAC secret, not a JWT
+[functions.create-listing]
+verify_jwt = false          # gated by the shared artisan code + rate limit
+[functions.create-order]
+verify_jwt = false          # gated by rate limit; price is server-side
+[functions.upload-photo]
+verify_jwt = false          # gated by the shared artisan code + rate limit
+[functions.notify-fulfilled]
+verify_jwt = false          # gated by requireAdmin() inside the function
