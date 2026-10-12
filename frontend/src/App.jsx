@@ -16,14 +16,16 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="listing/:id" element={<Product />} />
+        <Route path="product/:id" element={<Product />} />
         <Route path="checkout/:listingId" element={<Checkout />} />
         <Route path="order/:token" element={<OrderStatus />} />
         <Route path="sell" element={<AddListing />} />
         <Route path="privacy" element={<Privacy />} />
         <Route path="terms" element={<Terms />} />
+        <Route path="admin" element={<Admin />} />
+        <Route path="admin/*" element={<Admin />} />
         <Route path="*" element={<NotFound />} />
       </Route>
-      <Route path="admin/*" element={<Admin />} />
     </Routes>
   );
 }

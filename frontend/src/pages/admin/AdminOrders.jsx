@@ -4,20 +4,18 @@ import {
   listOrders,
   markFulfilled,
   setPayout,
-  type Artisan,
 } from "../../lib/admin";
-import type { AdminOrder, OrderStatus } from "../../lib/types";
 import { formatINR, formatDate } from "../../lib/format";
 import { EmptyState, Notice, Spinner } from "../../components/ui";
 
-const STATUS_FILTERS: Array<OrderStatus | "all"> = ["all", "paid", "fulfilled", "placed", "cancelled"];
+const STATUS_FILTERS = ["all", "paid", "fulfilled", "placed", "cancelled"];
 
 export function AdminOrders() {
-  const [orders, setOrders] = useState<AdminOrder[] | null>(null);
-  const [artisans, setArtisans] = useState<Record<string, Artisan>>({});
-  const [filter, setFilter] = useState<OrderStatus | "all">("paid");
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [orders, setOrders] = useState(null);
+  const [artisans, setArtisans] = useState({});
+  const [filter, setFilter] = useState("paid");
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -67,7 +65,11 @@ export function AdminOrders() {
         <Stat label="Owed to artisans" value={formatINR(stats.owed)} />
       </div>
 
-      {notice && <div className="mt-4"><Notice kind="success">{notice}</Notice></div>}
+      {notice && (
+        <div className="mt-4">
+          <Notice kind="success">{notice}</Notice>
+        </div>
+      )}
 
       <div className="mt-6 flex flex-wrap gap-2">
         {STATUS_FILTERS.map((f) => (
@@ -76,7 +78,7 @@ export function AdminOrders() {
             onClick={() => setFilter(f)}
             aria-pressed={filter === f}
             className={`btn px-3 py-1.5 text-sm ${
-              filter === f ? "bg-ink text-white" : "border border-ink/20"
+              filter === f ? "bg-earth-slate text-white" : "border border-earth-border"
             }`}
           >
             {f}
@@ -103,28 +105,18 @@ export function AdminOrders() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }) {
   return (
     <div className="card p-3">
-      <p className="text-xs text-ink/50">{label}</p>
+      <p className="text-xs text-earth-muted">{label}</p>
       <p className="mt-0.5 text-lg font-semibold">{value}</p>
     </div>
   );
 }
 
-function OrderRow({
-  order,
-  artisan,
-  onChange,
-  onNotice,
-}: {
-  order: AdminOrder;
-  artisan?: Artisan;
-  onChange: () => void;
-  onNotice: (s: string) => void;
-}) {
+function OrderRow({ order, artisan, onChange, onNotice }) {
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState(null);
   const [payoutRef, setPayoutRef] = useState(order.payout_reference ?? "");
   const paidOrLater = order.status === "paid" || order.status === "fulfilled";
 
@@ -133,7 +125,11 @@ function OrderRow({
     setErr(null);
     try {
       const { emailed } = await markFulfilled(order.id);
-      onNotice(emailed ? "Marked fulfilled — review prompt emailed." : "Marked fulfilled (email not sent — check Resend config).");
+      onNotice(
+        emailed
+          ? "Marked fulfilled — review prompt emailed."
+          : "Marked fulfilled (email not sent — check Resend config)."
+      );
       onChange();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not mark fulfilled.");
@@ -141,7 +137,7 @@ function OrderRow({
     }
   }
 
-  async function savePayout(done: boolean) {
+  async function savePayout(done) {
     setBusy(true);
     setErr(null);
     try {
@@ -158,26 +154,30 @@ function OrderRow({
     <li className="card p-4 text-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="font-medium">{order.listings?.title ?? "—"}</h3>
-        <span className="rounded bg-ink/10 px-2 py-0.5 text-xs font-medium">{order.status}</span>
+        <span className="rounded bg-earth-border/40 px-2 py-0.5 text-xs font-medium">
+          {order.status}
+        </span>
       </div>
-      <p className="text-xs text-ink/50">
+      <p className="text-xs text-earth-muted">
         Ref {order.id.slice(0, 8)} · {formatDate(order.created_at)}
       </p>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div>
-          <p className="text-ink/50">Buyer</p>
+          <p className="text-earth-muted">Buyer</p>
           <p>{order.buyer_name}</p>
-          <p>{order.buyer_phone} · {order.buyer_email}</p>
-          <p className="mt-1 text-ink/50">
+          <p>
+            {order.buyer_phone} · {order.buyer_email}
+          </p>
+          <p className="mt-1 text-earth-muted">
             {order.fulfillment_method === "delivery" ? "Delivery" : "Pickup"}
             {order.delivery_point ? ` · ${order.delivery_point}` : ""}
             {order.delivery_time ? ` · ${order.delivery_time}` : ""}
           </p>
-          {order.delivery_notes && <p className="text-ink/50">Note: {order.delivery_notes}</p>}
+          {order.delivery_notes && <p className="text-earth-muted">Note: {order.delivery_notes}</p>}
         </div>
         <div>
-          <p className="text-ink/50">Artisan</p>
+          <p className="text-earth-muted">Artisan</p>
           {paidOrLater ? (
             artisan ? (
               <>
@@ -187,28 +187,32 @@ function OrderRow({
                 {artisan.instagram && <p>{artisan.instagram}</p>}
               </>
             ) : (
-              <p className="text-ink/50">Not linked</p>
+              <p className="text-earth-muted">Not linked</p>
             )
           ) : (
-            <p className="text-ink/40">Revealed after payment</p>
+            <p className="text-earth-muted/60">Revealed after payment</p>
           )}
           <div className="mt-2">
-            <p className="text-ink/50">Amounts</p>
+            <p className="text-earth-muted">Amounts</p>
             <p>
-              Buyer paid {formatINR(order.amount_total)} · commission{" "}
-              {formatINR(order.amount_commission)} · artisan {formatINR(order.amount_artisan)}
+              Buyer paid {formatINR(order.amount_total)} · commission {formatINR(order.amount_commission)} · artisan{" "}
+              {formatINR(order.amount_artisan)}
             </p>
             {order.razorpay_payment_id && (
-              <p className="text-ink/50">Razorpay: {order.razorpay_payment_id}</p>
+              <p className="text-earth-muted">Razorpay: {order.razorpay_payment_id}</p>
             )}
           </div>
         </div>
       </div>
 
-      {err && <div className="mt-3"><Notice kind="error">{err}</Notice></div>}
+      {err && (
+        <div className="mt-3">
+          <Notice kind="error">{err}</Notice>
+        </div>
+      )}
 
       {paidOrLater && (
-        <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-ink/10 pt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-earth-border pt-3">
           {order.status === "paid" && (
             <button className="btn-primary" onClick={fulfil} disabled={busy}>
               {busy ? "Working…" : "Mark fulfilled"}

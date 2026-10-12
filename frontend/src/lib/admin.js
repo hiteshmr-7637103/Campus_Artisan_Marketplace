@@ -1,26 +1,17 @@
 import { supabase } from "./supabaseClient";
 import { notifyFulfilled } from "./api";
-import type { AdminListing, AdminOrder } from "./types";
 
-export interface Artisan {
-  id: string;
-  name: string;
-  contact_phone: string | null;
-  contact_email: string | null;
-  instagram: string | null;
-}
-
-export async function listPendingListings(): Promise<AdminListing[]> {
+export async function listPendingListings() {
   const { data, error } = await supabase
     .from("listings")
     .select("*")
     .eq("status", "pending")
     .order("created_at", { ascending: true });
   if (error) throw error;
-  return data as AdminListing[];
+  return data;
 }
 
-export async function listRecentListings(): Promise<AdminListing[]> {
+export async function listRecentListings() {
   const { data, error } = await supabase
     .from("listings")
     .select("*")
@@ -28,24 +19,19 @@ export async function listRecentListings(): Promise<AdminListing[]> {
     .order("created_at", { ascending: false })
     .limit(50);
   if (error) throw error;
-  return data as AdminListing[];
+  return data;
 }
 
-export async function listArtisans(): Promise<Artisan[]> {
+export async function listArtisans() {
   const { data, error } = await supabase
     .from("artisans")
     .select("id, name, contact_phone, contact_email, instagram")
     .order("name");
   if (error) throw error;
-  return data as Artisan[];
+  return data;
 }
 
-export async function createArtisan(input: {
-  name: string;
-  contact_phone?: string | null;
-  contact_email?: string | null;
-  instagram?: string | null;
-}): Promise<string> {
+export async function createArtisan(input) {
   const { data, error } = await supabase
     .from("artisans")
     .insert({
@@ -60,7 +46,7 @@ export async function createArtisan(input: {
   return data.id;
 }
 
-export async function approveListing(listingId: string, artisanId: string): Promise<void> {
+export async function approveListing(listingId, artisanId) {
   const { error } = await supabase
     .from("listings")
     .update({ artisan_id: artisanId, status: "active", reject_reason: null })
@@ -68,7 +54,7 @@ export async function approveListing(listingId: string, artisanId: string): Prom
   if (error) throw error;
 }
 
-export async function rejectListing(listingId: string, reason: string): Promise<void> {
+export async function rejectListing(listingId, reason) {
   const { error } = await supabase
     .from("listings")
     .update({ status: "rejected", reject_reason: reason })
@@ -76,17 +62,17 @@ export async function rejectListing(listingId: string, reason: string): Promise<
   if (error) throw error;
 }
 
-export async function listOrders(): Promise<AdminOrder[]> {
+export async function listOrders() {
   const { data, error } = await supabase
     .from("orders")
     .select("*, listings(title, artisan_id)")
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw error;
-  return data as AdminOrder[];
+  return data;
 }
 
-export async function markFulfilled(orderId: string): Promise<{ emailed: boolean }> {
+export async function markFulfilled(orderId) {
   const { error } = await supabase
     .from("orders")
     .update({ status: "fulfilled", fulfilled_at: new Date().toISOString() })
@@ -101,11 +87,7 @@ export async function markFulfilled(orderId: string): Promise<{ emailed: boolean
   }
 }
 
-export async function setPayout(
-  orderId: string,
-  payoutDone: boolean,
-  reference: string,
-): Promise<void> {
+export async function setPayout(orderId, payoutDone, reference) {
   const { error } = await supabase
     .from("orders")
     .update({ payout_done: payoutDone, payout_reference: reference || null })
@@ -113,7 +95,7 @@ export async function setPayout(
   if (error) throw error;
 }
 
-export async function artisansById(): Promise<Record<string, Artisan>> {
+export async function artisansById() {
   const list = await listArtisans();
   return Object.fromEntries(list.map((a) => [a.id, a]));
 }

@@ -1,12 +1,12 @@
 // Money is always integer paise on the wire. Display only.
-export function formatINR(paise: number): string {
+export function formatINR(paise) {
   return "₹" + (paise / 100).toLocaleString("en-IN", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
 }
 
-export function formatDate(iso: string): string {
+export function formatDate(iso) {
   return new Date(iso).toLocaleDateString("en-IN", {
     day: "numeric",
     month: "short",
@@ -14,7 +14,7 @@ export function formatDate(iso: string): string {
   });
 }
 
-export function timeAgo(iso: string): string {
+export function timeAgo(iso) {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return "just now";
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;

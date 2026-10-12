@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 
 export function useSession() {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,10 +17,8 @@ export function useSession() {
   return { session, loading };
 }
 
-// Is the signed-in user in admin_users? RLS lets a non-admin read zero rows, so
-// this doubles as the authorization check for the admin panel.
-export function useIsAdmin(session: Session | null) {
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+export function useIsAdmin(session) {
+  const [isAdmin, setIsAdmin] = useState(null);
 
   useEffect(() => {
     if (!session) {
