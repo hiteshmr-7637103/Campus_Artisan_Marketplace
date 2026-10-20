@@ -4,6 +4,8 @@ import { Guard } from "./lib/auth";
 import { Home } from "./pages/Home";
 import { Product } from "./pages/Product";
 import { SellerProfile } from "./pages/SellerProfile";
+import { Wishlist } from "./pages/Wishlist";
+import { Cart } from "./pages/Cart";
 import { Account, ConfirmUpiChange, ForgotPassword, GoogleComplete, Login, ResetPassword, Signup, VerifyEmail } from "./pages/auth";
 import { Checkout, CheckoutReturn, MockPay } from "./pages/Checkout";
 import { OrderDetail, Orders } from "./pages/Orders";
@@ -25,6 +27,8 @@ export default function App() {
         <Route index element={<Home />} />
         <Route path="listing/:id" element={<Product />} />
         <Route path="seller/:id" element={<SellerProfile />} />
+        <Route path="wishlist" element={<Guard><Wishlist /></Guard>} />
+        <Route path="cart" element={<Guard><Cart /></Guard>} />
 
         <Route path="login" element={<Login />} />
         <Route path="signup" element={<Signup />} />

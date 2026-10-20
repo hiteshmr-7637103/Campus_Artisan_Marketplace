@@ -50,6 +50,42 @@
     @apply w-full rounded-xl border border-earth-border bg-white px-4 py-3 text-sm focus:border-brand-terracotta focus:ring-2 focus:ring-brand-terracotta/20 focus:outline-none;
   }
   .card {
-    @apply rounded-3xl border border-earth-border bg-white shadow-xs;
+    @apply rounded-3xl border border-earth-border bg-white shadow-xs transition-all duration-300;
+  }
+  .card-hover {
+    @apply hover:-translate-y-1 hover:shadow-lg hover:border-earth-border/80;
   }
 }
+
+@keyframes heartPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+
+.animate-heart-pop {
+  animation: heartPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.shimmer-loader {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer-loader::after {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: shimmer 1.6s infinite;
+  content: '';
+}
+

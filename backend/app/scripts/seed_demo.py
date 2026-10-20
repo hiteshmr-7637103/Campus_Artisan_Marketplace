@@ -10,7 +10,7 @@ from sqlalchemy import select
 from ..config import get_settings
 from ..db import SessionLocal
 from ..models import (
-    Category, Listing, ListingStatus, Order, OrderStatus, Payment, Payout, SellerPrivate, SellerPublic,
+    Category, Listing, ListingImage, ListingStatus, Order, OrderStatus, Payment, Payout, SellerPrivate, SellerPublic,
     SellerStatus, User, UserRole,
 )
 from ..security import hash_password
@@ -52,17 +52,19 @@ def main() -> None:
         cats = {c.slug: c for c in db.execute(select(Category)).scalars()}
         if db.execute(select(Listing.id).limit(1)).first() is None:
             items = [
-                (sellers[0], "jewelry", "Beaded choker", "Blue and gold glass beads.", 29900),
-                (sellers[0], "jewelry", "Silver-tone earrings", "Lightweight dangling earrings.", 19900),
-                (sellers[1], "pottery", "Glazed coffee mug", "Wheel-thrown, dishwasher safe.", 45000),
-                (sellers[1], "decor", "Mini planter", "Fits a small succulent.", 25000),
-                (sellers[1], "pottery", "Pending: serving bowl", "Waiting for admin review.", 80000),
+                (sellers[0], "jewelry", "Beaded choker", "Blue and gold glass beads.", 29900, "https://images.unsplash.com/photo-1611591475836-81643c1ee55b?auto=format&fit=crop&w=800&q=80"),
+                (sellers[0], "jewelry", "Silver-tone earrings", "Lightweight dangling earrings.", 19900, "https://images.unsplash.com/photo-1635767798638-3e25273a8236?auto=format&fit=crop&w=800&q=80"),
+                (sellers[1], "pottery", "Glazed coffee mug", "Wheel-thrown, dishwasher safe.", 45000, "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?auto=format&fit=crop&w=800&q=80"),
+                (sellers[1], "decor", "Mini planter", "Fits a small succulent.", 25000, "https://images.unsplash.com/photo-1509423350716-97f9360b4e09?auto=format&fit=crop&w=800&q=80"),
+                (sellers[1], "pottery", "Pending: serving bowl", "Waiting for admin review.", 80000, "https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?auto=format&fit=crop&w=800&q=80"),
             ]
             made = []
-            for i, (s, cat, title, desc, price) in enumerate(items):
+            for i, (s, cat, title, desc, price, img_url) in enumerate(items):
                 l = Listing(seller_id=s.id, category_id=cats[cat].id, title=title, description=desc, price_paise=price,
                             status=ListingStatus.pending_review if i == 4 else ListingStatus.active)
                 db.add(l)
+                db.flush()
+                db.add(ListingImage(listing_id=l.id, storage_path=img_url, position=0))
                 made.append(l)
             db.flush()
             sold = made[1]

@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { createOrder, fetchListing, fetchOrder, simulatePayment } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatINR } from "../lib/format";
+import { CAMPUS_PICKUP_LOCATIONS, VALID_COUPONS } from "../lib/cart";
+import { showToast } from "../lib/toast";
 import { EmptyState, Notice, Spinner, useLoad } from "../components/ui";
 
 // Send the buyer to the payment page. In mock mode it's one of our own routes, so stay inside the SPA.
@@ -19,6 +21,13 @@ export function Checkout() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
+  // Phase 2: Campus Pickup & Coupon State
+  const [pickupLoc, setPickupLoc] = useState(CAMPUS_PICKUP_LOCATIONS[0].id);
+  const [pickupNotes, setPickupNotes] = useState("");
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponMsg, setCouponMsg] = useState(null);
+
   if (loadError) {
     return (
       <EmptyState title="This craft isn't available" hint="It may have sold or been removed.">
@@ -33,6 +42,48 @@ export function Checkout() {
   const isOwnListing = listing.seller.id === user.id;
   const canPay = !isOwnListing;
 
+  // Coupon calculations
+  let discountPaise = 0;
+  if (appliedCoupon && listing) {
+    if (appliedCoupon.type === "percent") {
+      discountPaise = Math.round((listing.price_paise * appliedCoupon.value) / 100);
+    } else if (appliedCoupon.type === "flat") {
+      discountPaise = Math.min(listing.price_paise, appliedCoupon.value);
+    }
+  }
+  const totalPayable = Math.max(0, listing.price_paise - discountPaise);
+
+  function handleApplyCoupon(e) {
+    e.preventDefault();
+    const code = (couponInput || "").trim().toUpperCase();
+    if (!code) {
+      setCouponMsg({ success: false, message: "Please enter a coupon code." });
+      return;
+    }
+    const found = VALID_COUPONS[code];
+    if (!found) {
+      setCouponMsg({ success: false, message: `Coupon “${code}” is not valid.` });
+      return;
+    }
+    if (found.minOrderPaise && listing.price_paise < found.minOrderPaise) {
+      setCouponMsg({
+        success: false,
+        message: `Requires minimum order of ₹${(found.minOrderPaise / 100).toLocaleString("en-IN")}.`,
+      });
+      return;
+    }
+    setAppliedCoupon(found);
+    setCouponMsg({ success: true, message: `Coupon applied: ${found.label}!` });
+    showToast(`Saved ₹${Math.round((found.type === "percent" ? (listing.price_paise * found.value) / 100 : found.value) / 100)}!`, "🎉");
+  }
+
+  function handleRemoveCoupon() {
+    setAppliedCoupon(null);
+    setCouponMsg(null);
+    setCouponInput("");
+    showToast("Coupon removed", "🏷️");
+  }
+
   async function handlePay() {
     setSubmitting(true);
     setError(null);
@@ -45,6 +96,8 @@ export function Checkout() {
       setSubmitting(false);
     }
   }
+
+  const selectedLoc = CAMPUS_PICKUP_LOCATIONS.find((l) => l.id === pickupLoc);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 sm:py-12">
@@ -64,28 +117,66 @@ export function Checkout() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-        {/* Left: who's buying + pay */}
+        {/* Left: Who's buying + Campus Handoff Location + Pay */}
         <div className="md:col-span-7 space-y-6">
           <div>
             <h2 className="font-editorial text-2xl font-bold text-earth-slate">Confirm & Pay</h2>
-            <p className="text-xs text-earth-muted mt-1">
-              You'll pay on Razorpay. Once payment is confirmed, the artisan's contact details unlock on your order
-              page so you can arrange the campus handoff.
+            <p className="text-xs text-earth-muted mt-1 leading-relaxed">
+              You'll complete payment securely via Razorpay. Once verified, the artisan's contact details unlock immediately on your order receipt.
             </p>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white border border-earth-border text-sm space-y-1">
-            <span className="block text-xs font-bold uppercase tracking-wider text-earth-muted">Buying as</span>
+          <div className="p-4 rounded-2xl bg-white border border-earth-border text-sm space-y-1 shadow-xs">
+            <span className="block text-xs font-bold uppercase tracking-wider text-earth-muted">Buyer Profile</span>
             <p className="font-semibold text-earth-slate">{user.full_name}</p>
             <p className="text-xs text-earth-muted">{user.email}</p>
             <p className="text-[11px] text-earth-muted pt-1">
-              The artisan sees your name and phone only after you pay.{" "}
+              The maker sees your name and phone number only after payment is confirmed.{" "}
               {!user.phone && (
                 <>
-                  <Link to="/account">Add your phone number</Link> so they can reach you.
+                  <Link to="/account" className="text-brand-terracotta hover:underline">Add your phone</Link> so they can message you on WhatsApp.
                 </>
               )}
             </p>
+          </div>
+
+          {/* Campus Pickup Spot Selector */}
+          <div className="p-4 rounded-2xl bg-white border border-earth-border space-y-3 shadow-xs">
+            <label htmlFor="checkout-pickup" className="block text-xs font-bold uppercase tracking-wider text-earth-slate">
+              📍 Preferred Campus Handoff Spot
+            </label>
+            <select
+              id="checkout-pickup"
+              value={pickupLoc}
+              onChange={(e) => setPickupLoc(e.target.value)}
+              className="w-full bg-[#FAF7F2] border border-earth-border rounded-xl px-3.5 py-2.5 text-xs text-earth-slate font-medium focus:outline-none focus:border-brand-terracotta cursor-pointer"
+            >
+              {CAMPUS_PICKUP_LOCATIONS.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.label}
+                </option>
+              ))}
+            </select>
+            {selectedLoc?.hint && (
+              <p className="text-[11px] text-earth-muted">
+                💡 {selectedLoc.hint}
+              </p>
+            )}
+
+            <div className="pt-2">
+              <label htmlFor="checkout-notes" className="block text-xs font-bold uppercase tracking-wider text-earth-slate mb-1">
+                Note for Maker <span className="font-normal text-earth-muted lowercase">(optional)</span>
+              </label>
+              <input
+                id="checkout-notes"
+                type="text"
+                placeholder="e.g. Can meet after 2 PM chemistry lecture"
+                maxLength={100}
+                value={pickupNotes}
+                onChange={(e) => setPickupNotes(e.target.value)}
+                className="w-full bg-white border border-earth-border rounded-xl px-3.5 py-2 text-xs text-earth-slate focus:outline-none focus:border-brand-terracotta"
+              />
+            </div>
           </div>
 
           {isOwnListing && <Notice kind="info">This is your own listing — you can't buy it.</Notice>}
@@ -98,21 +189,21 @@ export function Checkout() {
               </span>
               <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">UPI Ready</span>
             </div>
-            <p className="text-xs text-earth-muted">Google Pay, PhonePe, Paytm UPI, debit/credit cards & NetBanking.</p>
+            <p className="text-xs text-earth-muted">Google Pay, PhonePe, Paytm, all UPI apps, debit/credit cards & NetBanking.</p>
           </div>
 
           <button
             type="button"
             onClick={handlePay}
             disabled={submitting || !canPay}
-            className="w-full py-4 rounded-2xl bg-brand-terracotta hover:bg-brand-clayDark text-white font-bold text-base shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full py-4 rounded-2xl bg-brand-terracotta hover:bg-brand-clayDark text-white font-bold text-base shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.99]"
           >
             {submitting ? (
               "Starting secure payment…"
             ) : (
               <>
                 <span>Proceed to Pay</span>
-                <span>{formatINR(listing.price_paise)}</span>
+                <span>{formatINR(totalPayable)}</span>
                 <span>via Razorpay →</span>
               </>
             )}
@@ -127,7 +218,7 @@ export function Checkout() {
               {listing.images[0] && (
                 <img
                   alt={listing.title}
-                  className="w-16 h-16 rounded-xl object-cover bg-brand-clayLight border border-earth-border"
+                  className="w-16 h-16 rounded-2xl object-cover bg-brand-clayLight border border-earth-border shadow-xs"
                   src={listing.images[0]}
                 />
               )}
@@ -139,20 +230,72 @@ export function Checkout() {
                 </span>
               </div>
             </div>
+
+            {/* Promo Code Box */}
+            <div className="pb-3 border-b border-earth-border space-y-2">
+              <span className="block text-[11px] font-bold uppercase tracking-wider text-earth-slate">
+                Discount Code
+              </span>
+              {appliedCoupon ? (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-800 font-semibold">
+                  <span>🏷️ {appliedCoupon.code}</span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    className="text-red-600 hover:underline text-[11px] font-bold"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. STUDENT10"
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value)}
+                    className="flex-1 uppercase bg-white border border-earth-border rounded-xl px-2.5 py-1.5 text-xs text-earth-slate focus:outline-none focus:border-brand-terracotta"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 rounded-xl bg-earth-slate hover:bg-stone-800 text-white text-xs font-semibold shadow-xs"
+                  >
+                    Apply
+                  </button>
+                </form>
+              )}
+              {couponMsg && !appliedCoupon && (
+                <p className={`text-[11px] ${couponMsg.success ? "text-emerald-700" : "text-red-600"}`}>
+                  {couponMsg.message}
+                </p>
+              )}
+            </div>
+
+            {/* Price breakdown */}
             <div className="space-y-2 text-xs">
               <div className="flex justify-between text-earth-muted">
-                <span>Item</span>
+                <span>Handmade Item</span>
                 <span className="font-medium text-earth-slate">{formatINR(listing.price_paise)}</span>
               </div>
+
+              {discountPaise > 0 && (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span>Promo ({appliedCoupon?.code})</span>
+                  <span>-{formatINR(discountPaise)}</span>
+                </div>
+              )}
+
               <div className="flex justify-between text-earth-muted">
-                <span>Campus handoff</span>
-                <span className="text-emerald-700 font-semibold">FREE</span>
+                <span>Campus Handoff</span>
+                <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded">FREE</span>
               </div>
+
               <div className="pt-3 border-t border-earth-border flex justify-between text-sm font-bold text-earth-slate">
                 <span>Total payable</span>
-                <span className="text-brand-clayDark font-editorial text-xl">{formatINR(listing.price_paise)}</span>
+                <span className="text-brand-clayDark font-editorial text-xl">{formatINR(totalPayable)}</span>
               </div>
             </div>
+
             <div className="p-3 rounded-xl bg-stone-50 text-[11px] text-earth-muted flex items-start gap-2">
               <span>🛡️</span>
               <span>Unpaid checkouts expire after 30 minutes. If someone else buys the item first, you're refunded.</span>
