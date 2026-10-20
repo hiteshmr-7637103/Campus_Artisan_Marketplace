@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Listing, ListingStatus, Order, OrderStatus, Payment, Payout, User
+from ..models import Listing, ListingStatus, Order, OrderStatus, Payment, User
 from . import razorpay
 
 log = logging.getLogger("app.payments")
@@ -52,9 +52,9 @@ def mark_order_paid(
     order.paid_at = datetime.now(timezone.utc)
     order.needs_refund = not ok
     db.add(Payment(order_id=order.id, razorpay_payment_id=payment_id, amount_paise=amount_paise, status="captured", raw_event=raw_event))
-    if ok:
-        db.add(Payout(order_id=order.id, seller_id=order.seller_id, amount_paise=order.seller_amount_paise))
-    else:
+    # The payout row is created on fulfilment (see routers.admin.fulfill), not here — a buyer
+    # paying is not enough on its own, the seller also has to actually fulfil the order.
+    if not ok:
         log.warning("order %s paid but needs refund (sold=%s amount_ok=%s late=%s)", order.id, sold, amount_paise == order.amount_paise, late)
 
     title = db.get(Listing, order.listing_id).title

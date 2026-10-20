@@ -1,21 +1,24 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import current_user, require_seller, require_verified
 from ..models import (
-    Category, Listing, ListingImage, ListingStatus, Order, Payout, SellerPrivate, SellerPublic,
-    SellerStatus, User,
+    AuthToken, Category, Listing, ListingImage, ListingStatus, Order, Payout, PayoutStatement, PayoutStatus,
+    SellerPrivate, SellerPublic, SellerStatus, TokenPurpose, User,
 )
+from ..ratelimit import AUTH_LIMIT, limiter
 from ..schemas import (
-    ImageOut, ListingCreateIn, ListingUpdateIn, MessageOut, SellerApplyIn, SellerListingOut, SellerMeOut,
-    SellerOrderOut, SellerPayoutOut,
+    ConfirmUpiChangeIn, ImageOut, ListingCreateIn, ListingUpdateIn, MessageOut, RequestUpiChangeIn, SellerApplyIn,
+    SellerListingOut, SellerMeOut, SellerOrderOut, SellerPayoutOut, StatementOut,
 )
-from ..services import contact, uploads
+from ..security import hash_token, new_token, verify_password
+from ..services import contact, email, uploads
 
 router = APIRouter(prefix="/seller", tags=["seller"])
 MAX_IMAGES = 3
@@ -28,10 +31,12 @@ def apply(body: SellerApplyIn, user: User = Depends(require_verified), db: Sessi
     pub = db.get(SellerPublic, user.id)
     if pub is None:  # re-application after a rejection updates the existing rows
         db.add(SellerPublic(seller_id=user.id, display_name=body.display_name, bio=body.bio))
-        db.add(SellerPrivate(seller_id=user.id, phone=body.phone, instagram=body.instagram, upi_id=body.upi_id))
+        db.add(SellerPrivate(seller_id=user.id, phone=body.phone, instagram=body.instagram, upi_id=body.upi_id, upi_updated_at=datetime.now(timezone.utc)))
     else:
         pub.display_name, pub.bio = body.display_name, body.bio
         priv = db.get(SellerPrivate, user.id)
+        if priv.upi_id != body.upi_id:
+            priv.upi_updated_at = datetime.now(timezone.utc)
         priv.phone, priv.instagram, priv.upi_id = body.phone, body.instagram, body.upi_id
     user.seller_status = SellerStatus.pending
     db.commit()
@@ -178,6 +183,81 @@ def my_orders(user: User = Depends(require_seller), db: Session = Depends(get_db
 
 
 @router.get("/payouts", response_model=list[SellerPayoutOut])
-def my_payouts(user: User = Depends(require_seller), db: Session = Depends(get_db)):
-    rows = db.execute(select(Payout).where(Payout.seller_id == user.id).order_by(Payout.created_at.desc())).scalars().all()
-    return [SellerPayoutOut(id=p.id, order_id=p.order_id, amount_paise=p.amount_paise, status=p.status, upi_txn_ref=p.upi_txn_ref, paid_at=p.paid_at, created_at=p.created_at) for p in rows]
+def my_payouts(status: PayoutStatus | None = None, user: User = Depends(require_seller), db: Session = Depends(get_db)):
+    q = select(Payout).where(Payout.seller_id == user.id).order_by(Payout.created_at.desc())
+    if status:
+        q = q.where(Payout.status == status)
+    rows = db.execute(q).scalars().all()
+    return [
+        SellerPayoutOut(
+            id=p.id, order_id=p.order_id, gross_paise=p.gross_paise, commission_paise=p.commission_paise,
+            amount_paise=p.amount_paise, status=p.status, eligible_at=p.eligible_at,
+            upi_txn_ref=p.upi_txn_ref, paid_at=p.paid_at, created_at=p.created_at,
+        )
+        for p in rows
+    ]
+
+
+@router.get("/statements", response_model=list[StatementOut])
+def my_statements(user: User = Depends(require_seller), db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(PayoutStatement).where(PayoutStatement.seller_id == user.id).order_by(PayoutStatement.period_start.desc())
+    ).scalars().all()
+    return [_statement_out(s) for s in rows]
+
+
+@router.get("/statements/{statement_id}", response_model=StatementOut)
+def my_statement(statement_id: uuid.UUID, user: User = Depends(require_seller), db: Session = Depends(get_db)):
+    s = db.execute(
+        select(PayoutStatement).where(PayoutStatement.id == statement_id, PayoutStatement.seller_id == user.id)
+    ).scalar_one_or_none()
+    if s is None:
+        raise HTTPException(404, "Statement not found")
+    return _statement_out(s)
+
+
+def _statement_out(s: PayoutStatement) -> StatementOut:
+    return StatementOut(
+        id=s.id, seller_id=s.seller_id, period_start=s.period_start, period_end=s.period_end, lines=s.lines,
+        gross_paise=s.gross_paise, commission_paise=s.commission_paise, net_paise=s.net_paise,
+        paid_paise=s.paid_paise, pending_paise=s.pending_paise, held_paise=s.held_paise, created_at=s.created_at,
+    )
+
+
+# ---- secure UPI change (password + emailed confirmation) -------------------
+@router.post("/upi/request-change", status_code=202, response_model=MessageOut)
+@limiter.limit(AUTH_LIMIT)
+def request_upi_change(request: Request, body: RequestUpiChangeIn, background: BackgroundTasks, user: User = Depends(require_seller), db: Session = Depends(get_db)):
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Incorrect password")
+    priv = db.get(SellerPrivate, user.id)
+    priv.pending_upi_id = body.new_upi_id
+    raw = new_token()
+    db.add(AuthToken(user_id=user.id, purpose=TokenPurpose.change_upi, token_hash=hash_token(raw), expires_at=datetime.now(timezone.utc) + timedelta(hours=1)))
+    db.commit()
+    background.add_task(email.send_upi_change_requested, user.email, body.new_upi_id, raw)
+    return MessageOut(message="Check your email to confirm the UPI ID change.")
+
+
+@router.post("/upi/confirm-change", response_model=MessageOut)
+@limiter.limit(AUTH_LIMIT)
+def confirm_upi_change(request: Request, body: ConfirmUpiChangeIn, background: BackgroundTasks, db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    row = db.execute(
+        update(AuthToken)
+        .where(AuthToken.token_hash == hash_token(body.token), AuthToken.purpose == TokenPurpose.change_upi, AuthToken.used_at.is_(None), AuthToken.expires_at > now)
+        .values(used_at=now)
+        .returning(AuthToken.user_id)
+    ).first()
+    if row is None:
+        db.rollback()
+        raise HTTPException(400, "This link is invalid or has expired")
+    priv = db.get(SellerPrivate, row.user_id)
+    if priv is None or not priv.pending_upi_id:
+        db.rollback()
+        raise HTTPException(400, "No pending UPI change found")
+    priv.upi_id, priv.pending_upi_id, priv.upi_updated_at = priv.pending_upi_id, None, now
+    user = db.get(User, row.user_id)
+    db.commit()
+    background.add_task(email.send_upi_change_confirmed, user.email, priv.upi_id)
+    return MessageOut(message="Your UPI ID has been updated.")

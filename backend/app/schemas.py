@@ -83,10 +83,34 @@ class AuthOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+    recovery_codes: list[str] | None = None  # only set once, in the admin 2FA confirm response
 
 
 class MessageOut(BaseModel):
     message: str
+
+
+class MfaChallengeOut(BaseModel):
+    mfa_required: bool = True
+    mfa_token: str
+
+
+class TotpEnrollOut(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class TotpConfirmIn(In):
+    code: Text = Field(min_length=6, max_length=10)
+
+
+class TotpVerifyIn(In):
+    mfa_token: Text = Field(min_length=10, max_length=4000)
+    code: Text = Field(min_length=6, max_length=24)  # a 6-digit TOTP code or a longer recovery code
+
+
+class RecoveryCodesOut(BaseModel):
+    recovery_codes: list[str]
 
 
 # ---- catalog ---------------------------------------------------------------
@@ -157,6 +181,22 @@ class SellerApplyIn(In):
         if not UPI_RE.match(v):
             raise ValueError("invalid UPI ID")
         return v
+
+
+class RequestUpiChangeIn(In):
+    password: Text = Field(min_length=1, max_length=200)
+    new_upi_id: Text = Field(min_length=3, max_length=80)
+
+    @field_validator("new_upi_id")
+    @classmethod
+    def _upi(cls, v: str) -> str:
+        if not UPI_RE.match(v):
+            raise ValueError("invalid UPI ID")
+        return v
+
+
+class ConfirmUpiChangeIn(In):
+    token: Text = Field(min_length=10, max_length=200)
 
 
 class SellerMeOut(BaseModel):
@@ -252,10 +292,28 @@ class SellerOrderOut(BaseModel):
 class SellerPayoutOut(BaseModel):
     id: uuid.UUID
     order_id: uuid.UUID
+    gross_paise: int
+    commission_paise: int
     amount_paise: int
     status: PayoutStatus
+    eligible_at: datetime | None
     upi_txn_ref: str | None
     paid_at: datetime | None
+    created_at: datetime
+
+
+class StatementOut(BaseModel):
+    id: uuid.UUID
+    seller_id: uuid.UUID
+    period_start: datetime
+    period_end: datetime
+    lines: list[dict]
+    gross_paise: int
+    commission_paise: int
+    net_paise: int
+    paid_paise: int
+    pending_paise: int
+    held_paise: int
     created_at: datetime
 
 
@@ -272,6 +330,11 @@ class ListingDecisionIn(In):
 
 class MarkPaidIn(In):
     upi_txn_ref: Text = Field(min_length=3, max_length=80)
+    totp_code: Text = Field(min_length=6, max_length=24)
+
+
+class StepUpIn(In):
+    totp_code: Text = Field(min_length=6, max_length=24)
 
 
 class AdminSellerOut(BaseModel):
@@ -325,11 +388,60 @@ class AdminPayoutOut(BaseModel):
     seller_id: uuid.UUID
     seller_name: str
     upi_id: str | None
+    gross_paise: int
+    commission_paise: int
     amount_paise: int
     status: PayoutStatus
+    provider: str
+    is_exception: bool
+    exception_reason: str | None
+    eligible_at: datetime | None
     upi_txn_ref: str | None
     paid_at: datetime | None
     created_at: datetime
+
+
+class PayoutTotalsOut(BaseModel):
+    orders: int
+    gross_paise: int
+    commission_paise: int
+    net_paid_paise: int
+    pending_paise: int
+    on_hold_paise: int
+
+
+class SellerLedgerOut(BaseModel):
+    seller_id: uuid.UUID
+    lifetime_paid_paise: int
+    rolling_8w_paid_paise: int
+    pending_paise: int
+    on_hold_paise: int
+    order_count: int
+    average_order_paise: int
+    last_payout_at: datetime | None
+    upi_id: str | None
+    upi_updated_at: datetime | None
+
+
+class AdjustmentOut(BaseModel):
+    id: uuid.UUID
+    seller_id: uuid.UUID
+    payout_id: uuid.UUID | None
+    order_id: uuid.UUID | None
+    amount_paise: int
+    reason: str
+    settled_in_payout_id: uuid.UUID | None
+    created_at: datetime
+
+
+class FinanceOut(BaseModel):
+    commission_earned_paise: int
+    collected_paise: int
+    paid_out_paise: int
+    outstanding_to_sellers_paise: int
+    payouts_failed: int
+    payouts_stuck: int
+    payouts_large_pending: int
 
 
 class MetricsOut(BaseModel):

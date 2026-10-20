@@ -24,7 +24,14 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (email, password) => {
-    const u = await api.login(email, password);
+    const r = await api.login(email, password);
+    if (r.mfaRequired) return r;
+    setUser(r.user);
+    return r;
+  }, []);
+
+  const completeMfa = useCallback(async (mfaToken, code) => {
+    const u = await api.verifyAdmin2fa(mfaToken, code);
     setUser(u);
     return u;
   }, []);
@@ -47,7 +54,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, reload, setUser }}>
+    <AuthContext.Provider value={{ user, loading, login, completeMfa, logout, reload, setUser }}>
       {children}
     </AuthContext.Provider>
   );

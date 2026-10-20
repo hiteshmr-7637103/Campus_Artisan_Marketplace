@@ -7,11 +7,17 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import get_db
-from ..deps import current_user
-from ..models import AuthToken, RefreshToken, TokenPurpose, User
+from ..deps import current_user, require_admin
+from ..models import AuthToken, RecoveryCode, RefreshToken, TokenPurpose, User, UserRole
 from ..ratelimit import AUTH_LIMIT, limiter
-from ..schemas import AuthOut, ForgotIn, LoginIn, MessageOut, ResetIn, SignupIn, TokenIn
-from ..security import DUMMY_HASH, create_access_token, hash_password, hash_token, new_token, verify_password
+from ..schemas import (
+    AuthOut, ForgotIn, LoginIn, MessageOut, MfaChallengeOut, ResetIn, SignupIn, TokenIn,
+    TotpConfirmIn, TotpEnrollOut, TotpVerifyIn,
+)
+from ..security import (
+    DUMMY_HASH, create_access_token, create_mfa_pending_token, decode_mfa_pending_token, hash_password,
+    hash_token, new_recovery_codes, new_token, new_totp_secret, totp_provisioning_uri, verify_password, verify_totp,
+)
 from ..services import email
 from .me import user_out
 
@@ -33,16 +39,18 @@ def _issue_auth_token(db: Session, user: User, purpose: TokenPurpose, ttl: timed
     return raw
 
 
-def _issue_session(db: Session, user: User, response: Response) -> AuthOut:
+def _issue_session(db: Session, user: User, response: Response, *, mfa: bool = False) -> AuthOut:
     s = get_settings()
     raw = new_token()
-    db.add(RefreshToken(user_id=user.id, token_hash=hash_token(raw), expires_at=_now() + timedelta(days=s.refresh_token_days)))
+    db.add(RefreshToken(user_id=user.id, token_hash=hash_token(raw), expires_at=_now() + timedelta(days=s.refresh_token_days), mfa=mfa))
     db.commit()
     response.set_cookie(
         COOKIE, raw, max_age=s.refresh_token_days * 86400, httponly=True, samesite="lax",
         secure=s.is_production, path="/api/auth",
     )
-    return AuthOut(access_token=create_access_token(user.id), user=user_out(user))
+    is_admin = user.role == UserRole.admin
+    token = create_access_token(user.id, mfa=mfa, admin=is_admin)
+    return AuthOut(access_token=token, user=user_out(user))
 
 
 @router.post("/signup", status_code=202, response_model=MessageOut)
@@ -67,14 +75,72 @@ def signup(request: Request, body: SignupIn, background: BackgroundTasks, db: Se
     return MessageOut(message=GENERIC_SIGNUP)
 
 
-@router.post("/login", response_model=AuthOut)
+@router.post("/login", response_model=None)
 @limiter.limit(AUTH_LIMIT)
-def login(request: Request, body: LoginIn, response: Response, db: Session = Depends(get_db)):
+def login(request: Request, body: LoginIn, response: Response, db: Session = Depends(get_db)) -> AuthOut | MfaChallengeOut:
     user = db.execute(select(User).where(User.email == body.email)).scalar_one_or_none()
     ok = verify_password(body.password, user.password_hash if user else DUMMY_HASH)
     if not user or not ok:
         raise HTTPException(401, "Invalid email or password")
+    if user.role == UserRole.admin and user.totp_enabled:
+        return MfaChallengeOut(mfa_token=create_mfa_pending_token(user.id))
     return _issue_session(db, user, response)
+
+
+@router.post("/admin/2fa/verify", response_model=AuthOut)
+@limiter.limit(get_settings().admin_2fa_attempt_limit)
+def admin_2fa_verify(request: Request, body: TotpVerifyIn, response: Response, background: BackgroundTasks, db: Session = Depends(get_db)):
+    user_id = decode_mfa_pending_token(body.mfa_token)
+    if user_id is None:
+        raise HTTPException(401, "This login challenge has expired; please log in again")
+    user = db.get(User, user_id)
+    if user is None or not user.totp_enabled:
+        raise HTTPException(401, "This login challenge has expired; please log in again")
+    if not _check_code(db, user, body.code):
+        raise HTTPException(401, "Incorrect code")
+    out = _issue_session(db, user, response, mfa=True)
+    background.add_task(email.send_alert, "New admin login", f"{user.email} completed an admin login just now.")
+    return out
+
+
+def _check_code(db: Session, user: User, code: str) -> bool:
+    if verify_totp(user.totp_secret, code):
+        return True
+    row = db.execute(
+        select(RecoveryCode).where(RecoveryCode.user_id == user.id, RecoveryCode.code_hash == hash_token(code), RecoveryCode.used_at.is_(None))
+    ).scalar_one_or_none()
+    if row is None:
+        return False
+    row.used_at = _now()
+    db.commit()
+    return True
+
+
+@router.post("/admin/2fa/enroll", response_model=TotpEnrollOut)
+def admin_2fa_enroll(user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    # Idempotent while a setup is pending: re-clicking "start setup" (or reloading the page before
+    # confirming) must not invalidate whatever secret was already scanned into an authenticator app.
+    if not user.totp_secret or user.totp_enabled:
+        user.totp_secret = new_totp_secret()
+        db.commit()
+    return TotpEnrollOut(secret=user.totp_secret, otpauth_uri=totp_provisioning_uri(user.totp_secret, user.email))
+
+
+@router.post("/admin/2fa/confirm", response_model=AuthOut)
+def admin_2fa_confirm(body: TotpConfirmIn, response: Response, user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    if not user.totp_secret or not verify_totp(user.totp_secret, body.code):
+        raise HTTPException(400, "Incorrect code")
+    user.totp_enabled, user.totp_confirmed_at = True, _now()
+    db.execute(RecoveryCode.__table__.delete().where(RecoveryCode.user_id == user.id))
+    codes = new_recovery_codes()
+    for c in codes:
+        db.add(RecoveryCode(user_id=user.id, code_hash=hash_token(c)))
+    db.commit()
+    # The session that enrolled 2FA was minted before 2FA existed (mfa=false) and is no longer
+    # sufficient for admin routes — issue a fresh one now instead of leaving the admin stuck.
+    out = _issue_session(db, user, response, mfa=True)
+    out.recovery_codes = codes
+    return out
 
 
 @router.post("/refresh", response_model=AuthOut)
@@ -87,14 +153,14 @@ def refresh(request: Request, response: Response, refresh_token: str | None = Co
         update(RefreshToken)
         .where(RefreshToken.token_hash == hash_token(refresh_token), RefreshToken.revoked_at.is_(None), RefreshToken.expires_at > _now())
         .values(revoked_at=_now())
-        .returning(RefreshToken.user_id)
+        .returning(RefreshToken.user_id, RefreshToken.mfa)
     ).first()
     if row is None:
         db.rollback()
         response.delete_cookie(COOKIE, path="/api/auth")
         raise HTTPException(401, "Session expired")
     user = db.get(User, row.user_id)
-    return _issue_session(db, user, response)  # commits the revoke + the new token together
+    return _issue_session(db, user, response, mfa=row.mfa)  # commits the revoke + the new token together
 
 
 @router.post("/logout", response_model=MessageOut)

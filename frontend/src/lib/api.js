@@ -74,9 +74,22 @@ const patch = (path, json) => request(path, { method: "PATCH", json });
 export const signup = (b) => post("/auth/signup", b);
 export async function login(email, password) {
   const r = await post("/auth/login", { email, password });
+  if (r.mfa_required) return { mfaRequired: true, mfaToken: r.mfa_token };
+  accessToken = r.access_token;
+  return { user: r.user };
+}
+export async function verifyAdmin2fa(mfaToken, code) {
+  const r = await post("/auth/admin/2fa/verify", { mfa_token: mfaToken, code });
   accessToken = r.access_token;
   return r.user;
 }
+export const admin2faEnroll = () => post("/auth/admin/2fa/enroll");
+export async function admin2faConfirm(code) {
+  const r = await post("/auth/admin/2fa/confirm", { code });
+  accessToken = r.access_token; // the enrolling session predates 2FA; this one carries mfa=true
+  return r; // { user, recovery_codes, ... }
+}
+export const googleLoginUrl = () => `${API_URL}/auth/google/login`;
 export async function logout() {
   try {
     await post("/auth/logout");
@@ -113,6 +126,8 @@ export const simulatePayment = (id) => post(`/dev/simulate-payment/${id}`); // m
 // ---- seller ----------------------------------------------------------------
 export const sellerMe = () => request("/seller/me");
 export const sellerApply = (b) => post("/seller/apply", b);
+export const requestUpiChange = (password, new_upi_id) => post("/seller/upi/request-change", { password, new_upi_id });
+export const confirmUpiChange = (token) => post("/seller/upi/confirm-change", { token });
 export const sellerListings = () => request("/seller/listings");
 export const sellerListing = (id) => request(`/seller/listings/${id}`);
 export const createListing = (b) => post("/seller/listings", b);
@@ -127,9 +142,17 @@ export const deleteImage = (listingId, imageId) =>
   request(`/seller/listings/${listingId}/images/${imageId}`, { method: "DELETE" });
 export const sellerOrders = () => request("/seller/orders");
 export const sellerPayouts = () => request("/seller/payouts");
+export const sellerStatements = () => request("/seller/statements");
+export const sellerStatement = (id) => request(`/seller/statements/${id}`);
 
 // ---- admin -----------------------------------------------------------------
 const withStatus = (path, status) => (status ? `${path}?status=${status}` : path);
+const withParams = (path, params = {}) => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") qs.set(k, v);
+  const s = qs.toString();
+  return s ? `${path}?${s}` : path;
+};
 export const adminSellers = (status) => request(withStatus("/admin/sellers", status));
 export const adminSellerDecision = (id, decision, reason) =>
   post(`/admin/sellers/${id}/decision`, { decision, reason: reason || null });
@@ -138,6 +161,29 @@ export const adminListingDecision = (id, decision, reason) =>
   post(`/admin/listings/${id}/decision`, { decision, reason: reason || null });
 export const adminOrders = (status) => request(withStatus("/admin/orders", status));
 export const adminOrderAction = (id, action) => post(`/admin/orders/${id}/${action}`); // fulfill | cancel | refund
-export const adminPayouts = (status) => request(withStatus("/admin/payouts", status));
-export const adminMarkPaid = (id, upi_txn_ref) => post(`/admin/payouts/${id}/mark-paid`, { upi_txn_ref });
+export const adminPayouts = (params) => request(withParams("/admin/payouts", params));
+export const adminPayoutTotals = (params) => request(withParams("/admin/payouts/totals", params));
+export const adminMarkPaid = (id, upi_txn_ref, totp_code) => post(`/admin/payouts/${id}/mark-paid`, { upi_txn_ref, totp_code });
+export const adminReleasePayout = (id, totp_code) => post(`/admin/payouts/${id}/release`, { totp_code });
+export const adminPayoutsBySeller = (sellerId) => request(`/admin/payouts/sellers/${sellerId}`);
+export const adminFinance = () => request("/admin/finance");
+export const adminStatements = (sellerId) => request(withParams("/admin/statements", { seller_id: sellerId }));
+export const adminStatement = (id) => request(`/admin/statements/${id}`);
+export const adminRegenerateStatement = (id) => post(`/admin/statements/${id}/regenerate`);
 export const adminMetrics = () => request("/admin/metrics");
+
+// Authenticated file download (the generic request() always parses JSON, which a CSV isn't).
+export async function downloadCsv(path, filename) {
+  const headers = new Headers();
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  const res = await fetch(`${API_URL}${path}`, { headers, credentials: "include" });
+  if (!res.ok) throw new ApiError(`Could not download (${res.status})`, res.status);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+export const adminExportPayoutsCsv = (params) => downloadCsv(withParams("/admin/payouts/export.csv", params), "payouts.csv");

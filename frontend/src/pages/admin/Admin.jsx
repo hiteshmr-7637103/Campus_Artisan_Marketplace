@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { adminMetrics } from "../../lib/api";
 import { formatINR } from "../../lib/format";
 import { Notice, Spinner, useLoad } from "../../components/ui";
@@ -6,6 +6,8 @@ import { AdminSellers } from "./AdminSellers";
 import { AdminListings } from "./AdminListings";
 import { AdminOrders } from "./AdminOrders";
 import { AdminPayouts } from "./AdminPayouts";
+import { AdminFinance } from "./AdminFinance";
+import { AdminStatements } from "./AdminStatements";
 
 const TABS = [
   ["", "Overview"],
@@ -13,10 +15,15 @@ const TABS = [
   ["listings", "Listing review"],
   ["orders", "Orders"],
   ["payouts", "Payouts"],
+  ["finance", "Finance"],
+  ["statements", "Statements"],
 ];
 
-// Mounted at /admin/* behind <Guard need="admin">; the API checks the admin role on every call too.
+// Mounted at /admin/* behind <Guard need="admin">; the API checks the admin role (and 2FA) on every call too.
 export function Admin() {
+  const { data: m, error } = useLoad(adminMetrics);
+  const needs2fa = error?.status === 403;
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 sm:py-10">
       <div className="pb-6 mb-6 border-b border-earth-border">
@@ -27,37 +34,50 @@ export function Admin() {
         <p className="text-xs text-earth-muted mt-1">Approve sellers and listings, track orders, and record artisan UPI payouts.</p>
       </div>
 
-      <nav className="flex items-center gap-1 sm:gap-3 border-b border-earth-border mb-6 overflow-x-auto custom-scroll">
-        {TABS.map(([path, label]) => (
-          <NavLink
-            key={path}
-            to={path ? `/admin/${path}` : "/admin"}
-            end
-            className={({ isActive }) =>
-              `px-3 sm:px-4 py-2.5 text-sm whitespace-nowrap transition-all border-b-2 no-underline ${
-                isActive
-                  ? "border-brand-terracotta text-brand-terracotta font-bold"
-                  : "border-transparent text-earth-muted hover:text-earth-slate font-medium"
-              }`
-            }
-          >
-            {label}
-          </NavLink>
-        ))}
-      </nav>
+      {needs2fa ? (
+        <Notice kind="warn">
+          <p className="mb-3">{error.message}</p>
+          <Link to="/admin/2fa" className="btn-primary no-underline">
+            Set up two-factor authentication
+          </Link>
+        </Notice>
+      ) : (
+        <>
+          <nav className="flex items-center gap-1 sm:gap-3 border-b border-earth-border mb-6 overflow-x-auto custom-scroll">
+            {TABS.map(([path, label]) => (
+              <NavLink
+                key={path}
+                to={path ? `/admin/${path}` : "/admin"}
+                end
+                className={({ isActive }) =>
+                  `px-3 sm:px-4 py-2.5 text-sm whitespace-nowrap transition-all border-b-2 no-underline ${
+                    isActive
+                      ? "border-brand-terracotta text-brand-terracotta font-bold"
+                      : "border-transparent text-earth-muted hover:text-earth-slate font-medium"
+                  }`
+                }
+              >
+                {label}
+              </NavLink>
+            ))}
+          </nav>
 
-      <Routes>
-        <Route index element={<Overview />} />
-        <Route path="sellers" element={<AdminSellers />} />
-        <Route path="listings" element={<AdminListings />} />
-        <Route path="orders" element={<AdminOrders />} />
-        <Route path="payouts" element={<AdminPayouts />} />
-      </Routes>
+          <Routes>
+            <Route index element={<Overview m={m} error={error} />} />
+            <Route path="sellers" element={<AdminSellers />} />
+            <Route path="listings" element={<AdminListings />} />
+            <Route path="orders" element={<AdminOrders />} />
+            <Route path="payouts" element={<AdminPayouts />} />
+            <Route path="finance" element={<AdminFinance />} />
+            <Route path="statements" element={<AdminStatements />} />
+          </Routes>
+        </>
+      )}
     </div>
   );
 }
 
-function Kpi({ label, value, tone = "text-earth-slate", sub }) {
+export function Kpi({ label, value, tone = "text-earth-slate", sub }) {
   return (
     <div className="p-5 rounded-2xl bg-white border border-earth-border shadow-xs">
       <span className="text-xs text-earth-muted font-medium">{label}</span>
@@ -67,8 +87,7 @@ function Kpi({ label, value, tone = "text-earth-slate", sub }) {
   );
 }
 
-function Overview() {
-  const { data: m, error } = useLoad(adminMetrics);
+function Overview({ m, error }) {
   if (error) return <Notice kind="error">{error.message}</Notice>;
   if (!m) return <Spinner />;
   const conversion = m.checkouts_started ? Math.round((m.paid_orders / m.checkouts_started) * 100) : 0;

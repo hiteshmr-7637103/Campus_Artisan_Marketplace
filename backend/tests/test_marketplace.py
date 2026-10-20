@@ -154,7 +154,7 @@ def test_3_webhook_idempotent(client, world, db, outbox):
     assert world.webhook(o["id"], l.price_paise, payment_id="pay_1", event_id="evt_1").json()["status"] == "duplicate"
     # even a replay with a fresh event id changes nothing
     assert world.webhook(o["id"], l.price_paise, payment_id="pay_1", event_id="evt_2").status_code == 200
-    assert (db.query(Payment).count(), db.query(Payout).count(), len(outbox)) == (1, 1, n)
+    assert (db.query(Payment).count(), len(outbox)) == (1, n)
 
 
 def test_11_double_sale(client, world, db):
@@ -167,7 +167,7 @@ def test_11_double_sale(client, world, db):
     db.expire_all()
     assert db.get(Listing, l.id).status == ListingStatus.sold
     assert not db.get(Order, o1["id"]).needs_refund and db.get(Order, o2["id"]).needs_refund
-    assert db.query(Payout).count() == 1 and db.query(Payment).count() == 2
+    assert db.query(Payment).count() == 2
 
 
 def test_amount_mismatch_flagged(client, world, db):
@@ -282,10 +282,23 @@ def test_12_reviews_gated_and_full_admin_flow(client, world, db, outbox):
     assert db.query(Review).count() == 1
     prof = client.get(f"/api/sellers/{s.id}").json()
     assert prof["avg_rating"] == 5 and prof["review_count"] == 1 and prof["reviews"][0]["buyer_name"] == "Bina"
-    # payouts
+    # payouts: created on fulfilment, pending until the hold window promotes it to eligible
     pay = client.get("/api/admin/payouts", headers=ah).json()
-    assert pay[0]["upi_id"] == "shop@okaxis" and pay[0]["amount_paise"] == 45000
-    assert client.post(f"/api/admin/payouts/{pay[0]['id']}/mark-paid", json={"upi_txn_ref": "UTR12345"}, headers=ah).status_code == 200
+    assert pay[0]["upi_id"] == "shop@okaxis" and pay[0]["amount_paise"] == 45000 and pay[0]["status"] == "pending"
+    code = world.totp_code(admin)
+    assert client.post(f"/api/admin/payouts/{pay[0]['id']}/mark-paid", json={"upi_txn_ref": "UTR12345", "totp_code": code}, headers=ah).status_code == 409
+    from datetime import timedelta
+
+    from app.services.payouts import promote_eligible
+
+    db.query(Order).update({"fulfilled_at": db.get(Order, o["id"]).fulfilled_at - timedelta(hours=48)})
+    db.commit()
+    assert promote_eligible(db) == 1
+    # a seller's first-ever payout is an exception (extra scrutiny) and needs an admin release
+    status_after = client.get("/api/admin/payouts", headers=ah).json()[0]["status"]
+    assert status_after == "on_hold"
+    assert client.post(f"/api/admin/payouts/{pay[0]['id']}/release", json={"totp_code": world.totp_code(admin)}, headers=ah).status_code == 200
+    assert client.post(f"/api/admin/payouts/{pay[0]['id']}/mark-paid", json={"upi_txn_ref": "UTR12345", "totp_code": world.totp_code(admin)}, headers=ah).status_code == 200
     assert client.get("/api/seller/payouts", headers=world.headers(s)).json()[0]["status"] == "paid"
     m = client.get("/api/admin/metrics", headers=ah).json()
     assert m["paid_orders"] == 1 and m["gmv_paise"] == 50000 and m["commission_paise"] == 5000

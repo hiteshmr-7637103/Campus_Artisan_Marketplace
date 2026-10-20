@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { archiveListing, sellerListings, sellerOrders, sellerPayouts } from "../../lib/api";
+import { archiveListing, sellerListings, sellerOrders, sellerPayouts, sellerStatements } from "../../lib/api";
 import { formatDate, formatINR } from "../../lib/format";
 import { LISTING_STATUS_LABEL, ORDER_STATUS_LABEL } from "../../lib/types";
 import { showToast } from "../../lib/toast";
@@ -10,7 +10,10 @@ const TABS = [
   ["listings", "My Crafts"],
   ["orders", "Orders"],
   ["payouts", "Payouts"],
+  ["statements", "Statements"],
 ];
+
+const HELD_STATUSES = ["pending", "eligible", "processing", "on_hold"];
 
 export function SellerStudio() {
   const [tab, setTab] = useState("listings");
@@ -43,6 +46,7 @@ export function SellerStudio() {
       {tab === "listings" && <ListingsTab />}
       {tab === "orders" && <OrdersTab />}
       {tab === "payouts" && <PayoutsTab />}
+      {tab === "statements" && <StatementsTab />}
     </div>
   );
 }
@@ -158,14 +162,14 @@ function PayoutsTab() {
   if (!payouts) return <Spinner />;
   if (payouts.length === 0) return <EmptyState title="No payouts yet" hint="Each paid order creates a payout to your UPI." />;
 
-  const pending = payouts.filter((p) => p.status === "pending").reduce((s, p) => s + p.amount_paise, 0);
+  const pending = payouts.filter((p) => HELD_STATUSES.includes(p.status)).reduce((s, p) => s + p.amount_paise, 0);
   const paid = payouts.filter((p) => p.status === "paid").reduce((s, p) => s + p.amount_paise, 0);
 
   return (
     <div>
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="card p-5">
-          <span className="text-xs text-earth-muted font-medium">Pending</span>
+          <span className="text-xs text-earth-muted font-medium">Pending / under review</span>
           <div className="font-editorial text-2xl font-bold text-amber-600">{formatINR(pending)}</div>
         </div>
         <div className="card p-5">
@@ -179,14 +183,64 @@ function PayoutsTab() {
             <div>
               <p className="font-semibold text-earth-slate">{formatINR(p.amount_paise)}</p>
               <p className="text-xs text-earth-muted">
+                Gross {formatINR(p.gross_paise)} · Commission {formatINR(p.commission_paise)}
+              </p>
+              <p className="text-xs text-earth-muted">
                 Order #{p.order_id.slice(0, 8).toUpperCase()} · {formatDate(p.created_at)}
                 {p.upi_txn_ref ? ` · UPI ref ${p.upi_txn_ref}` : ""}
               </p>
             </div>
-            <StatusBadge status={p.status === "paid" ? "paid" : "pending"} label={p.status === "paid" ? "Paid" : "Pending"} />
+            <StatusBadge status={p.status} />
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+function StatementsTab() {
+  const { data: statements, error } = useLoad(sellerStatements);
+  if (error) return <Notice kind="error">{error.message}</Notice>;
+  if (!statements) return <Spinner />;
+  if (statements.length === 0) return <EmptyState title="No statements yet" hint="A statement is generated for you every Monday, summarizing the week before." />;
+
+  function download(s) {
+    const header = "order_id,product,sale_amount_paise,commission_paise,net_payout_paise,payout_status,paid_at,utr";
+    const rows = s.lines.map((l) =>
+      [l.order_id, l.product, l.sale_amount_paise, l.commission_paise, l.net_payout_paise, l.payout_status, l.paid_at ?? "", l.utr ?? ""].join(",")
+    );
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `statement-${formatDate(s.period_start)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <ul className="space-y-3">
+      {statements.map((s) => (
+        <li key={s.id} className="card p-4 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold text-earth-slate">
+                {formatDate(s.period_start)} – {formatDate(s.period_end)}
+              </p>
+              <p className="text-xs text-earth-muted">
+                Gross {formatINR(s.gross_paise)} · Commission {formatINR(s.commission_paise)} · Net {formatINR(s.net_paise)}
+              </p>
+              <p className="text-xs text-earth-muted">
+                Paid {formatINR(s.paid_paise)} · Pending {formatINR(s.pending_paise)} · Held {formatINR(s.held_paise)}
+              </p>
+            </div>
+            <button type="button" className="btn-primary py-2" onClick={() => download(s)}>
+              Download CSV
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

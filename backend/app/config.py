@@ -22,6 +22,23 @@ class Settings(BaseSettings):
     email_from: str = "Campus Artisans <onboarding@resend.dev>"
     upload_dir: str = "uploads"
 
+    payout_provider: str = "manual"  # manual | razorpayx
+    payout_hold_hours: int = 36  # time after fulfilment before a payout becomes eligible
+    payout_max_paise: int = 1_000_000  # per-payout cap (exception if above)
+    payout_seller_daily_cap_paise: int = 2_000_000
+    payout_platform_daily_cap_paise: int = 50_000_000  # circuit breaker
+    payout_new_seller_days: int = 14  # extra scrutiny for sellers approved more recently than this
+    payout_upi_change_cooldown_days: int = 3  # extra scrutiny if UPI id changed more recently than this
+    payout_max_attempts: int = 3  # failures before a payout needs manual review
+
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    session_secret: str = "dev-only-session-secret-change-me-0123456789"  # SessionMiddleware (OAuth state/nonce only)
+    totp_issuer: str = "Campus Artisan Marketplace"
+    mfa_pending_minutes: int = 5
+    admin_access_token_minutes: int = 10  # shorter-lived session for admin accounts
+    admin_2fa_attempt_limit: str = "10/15 minutes"
+
     access_token_minutes: int = 15
     refresh_token_days: int = 14
     order_expiry_minutes: int = 30
@@ -42,6 +59,10 @@ class Settings(BaseSettings):
         return self.environment == "production"
 
     @property
+    def google_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
+
+    @property
     def email_domains(self) -> list[str]:
         return [d.strip().lower().lstrip("@") for d in self.allowed_email_domains.split(",") if d.strip()]
 
@@ -55,6 +76,12 @@ class Settings(BaseSettings):
             raise RuntimeError("REQUIRE_EMAIL_VERIFICATION must be true when ENVIRONMENT=production")
         if self.is_production and self.jwt_secret.startswith("dev-only"):
             raise RuntimeError("Set a real JWT_SECRET in production")
+        if self.is_production and self.google_client_id and self.session_secret.startswith("dev-only"):
+            raise RuntimeError("Set a real SESSION_SECRET in production")
+        if bool(self.google_client_id) != bool(self.google_client_secret):
+            raise RuntimeError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together")
+        if self.payout_provider not in ("manual", "razorpayx"):
+            raise RuntimeError("PAYOUT_PROVIDER must be 'manual' or 'razorpayx'")
         if self.payment_mode == "razorpay" and not (
             self.razorpay_key_id and self.razorpay_key_secret and self.razorpay_webhook_secret
         ):

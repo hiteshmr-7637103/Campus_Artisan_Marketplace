@@ -103,6 +103,23 @@ def send_listing_decision(to: str, title: str, approved: bool, reason: str | Non
 
 
 @_safe
+def send_upi_change_requested(to: str, new_upi_id: str, token: str) -> None:
+    url = _link(f"/account/confirm-upi?token={token}")
+    body = (
+        f"<p>A change to your payout UPI ID (to <b>{_e(new_upi_id)}</b>) was requested on your account.</p>"
+        f"<p><a href='{url}'>Confirm this change</a> (valid for 1 hour).</p>"
+        "<p>If this wasn't you, do not click the link — your password may be compromised; change it immediately.</p>"
+    )
+    send_email(to, "Confirm your payout UPI ID change", _wrap("Confirm UPI change", body))
+
+
+@_safe
+def send_upi_change_confirmed(to: str, new_upi_id: str) -> None:
+    body = f"<p>Your payout UPI ID was changed to <b>{_e(new_upi_id)}</b>. Payouts are held for a short cooldown period as a safety measure.</p>"
+    send_email(to, "Your payout UPI ID was changed", _wrap("UPI ID updated", body))
+
+
+@_safe
 def send_alert(subject: str, body: str) -> None:
     """Operational alert (5xx, webhook failures) to the founder, if configured."""
     s = get_settings()

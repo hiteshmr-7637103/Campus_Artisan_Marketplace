@@ -68,13 +68,17 @@ def main() -> None:
             sold = made[1]
             sold.status = ListingStatus.sold
             commission = sold.price_paise // 10
+            now = datetime.now(timezone.utc)
             o = Order(buyer_id=buyer.id, seller_id=sold.seller_id, listing_id=sold.id, amount_paise=sold.price_paise,
                       commission_rate=0.1, commission_paise=commission, seller_amount_paise=sold.price_paise - commission,
-                      status=OrderStatus.paid, paid_at=datetime.now(timezone.utc))
+                      status=OrderStatus.fulfilled, paid_at=now, fulfilled_at=now)
             db.add(o)
             db.flush()
             db.add(Payment(order_id=o.id, razorpay_payment_id="demo_pay_1", amount_paise=o.amount_paise, status="captured"))
-            db.add(Payout(order_id=o.id, seller_id=o.seller_id, amount_paise=o.seller_amount_paise))
+            db.add(Payout(
+                order_id=o.id, seller_id=o.seller_id, gross_paise=o.amount_paise,
+                commission_paise=o.commission_paise, amount_paise=o.seller_amount_paise,
+            ))
         db.commit()
     print(f"Demo data ready. Logins: admin@example.com / buyer@example.com / asha@example.com / ravi@example.com  password: {PASSWORD}")
 

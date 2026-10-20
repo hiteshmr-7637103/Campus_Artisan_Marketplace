@@ -54,7 +54,8 @@ def _clean():
     with engine.begin() as c:
         c.execute(text(
             "TRUNCATE users, refresh_tokens, auth_tokens, seller_public, seller_private, listings, listing_images, "
-            "orders, payments, payouts, reviews, webhook_events RESTART IDENTITY CASCADE"
+            "orders, payments, payouts, payout_adjustments, payout_statements, reviews, webhook_events, "
+            "recovery_codes RESTART IDENTITY CASCADE"
         ))
     limiter.enabled = False
     limiter.reset()
@@ -113,7 +114,18 @@ class World:
     def headers(self, user: User) -> dict:
         r = self.client.post("/api/auth/login", json={"email": user.email, "password": PASSWORD})
         assert r.status_code == 200, r.text
-        return {"Authorization": f"Bearer {r.json()['access_token']}"}
+        body = r.json()
+        if body.get("mfa_required"):
+            import pyotp
+            code = pyotp.TOTP(self.db.get(User, user.id).totp_secret).now()
+            r2 = self.client.post("/api/auth/admin/2fa/verify", json={"mfa_token": body["mfa_token"], "code": code})
+            assert r2.status_code == 200, r2.text
+            body = r2.json()
+        return {"Authorization": f"Bearer {body['access_token']}"}
+
+    def totp_code(self, user: User) -> str:
+        import pyotp
+        return pyotp.TOTP(self.db.get(User, user.id).totp_secret).now()
 
     def listing(self, seller: User, price=50000, status=ListingStatus.active, title="Clay pot") -> Listing:
         cat = self.db.query(Category).first()
@@ -141,8 +153,14 @@ class World:
             headers={"x-razorpay-signature": sig, "x-razorpay-event-id": event_id or uuid.uuid4().hex, "content-type": "application/json"},
         )
 
-    def admin(self):
+    def admin(self, *, with_2fa=True):
         u = self.user(role=UserRole.admin, name="Admin")
+        if with_2fa:
+            import pyotp
+            u.totp_secret = pyotp.random_base32()
+            u.totp_enabled = True
+            u.totp_confirmed_at = datetime.now(timezone.utc)
+            self.db.commit()
         return u, self.headers(u)
 
 

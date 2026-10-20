@@ -11,4 +11,7 @@ slowapi==0.1.10
 python-multipart==0.0.32
 Pillow==12.3.0
 httpx==0.28.1
+Authlib==1.9.1
+itsdangerous==2.2.0
+PyOTP==2.10.0
 pytest==9.1.1

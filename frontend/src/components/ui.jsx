@@ -59,6 +59,11 @@ const TONE = {
   refunded: "bg-stone-100 text-stone-600",
   archived: "bg-stone-100 text-stone-600",
   sold: "bg-stone-800 text-stone-100",
+  eligible: "bg-sky-100 text-sky-800",
+  processing: "bg-indigo-100 text-indigo-800",
+  on_hold: "bg-amber-100 text-amber-800",
+  failed: "bg-red-100 text-red-800",
+  reversed: "bg-stone-100 text-stone-600",
 };
 
 export function StatusBadge({ status, label }) {

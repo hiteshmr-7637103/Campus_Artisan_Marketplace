@@ -26,27 +26,92 @@ function AuthCard({ eyebrow, title, subtitle, children, footer }) {
   );
 }
 
+function GoogleButton() {
+  return (
+    <>
+      <div className="my-5 flex items-center gap-3 text-xs text-earth-muted">
+        <span className="h-px flex-1 bg-earth-border" />
+        or
+        <span className="h-px flex-1 bg-earth-border" />
+      </div>
+      <button
+        type="button"
+        className="w-full rounded-xl border border-earth-border bg-white py-3 text-sm font-semibold text-earth-slate hover:bg-brand-clayLight"
+        onClick={() => (window.location.href = api.googleLoginUrl())}
+      >
+        Continue with Google
+      </button>
+    </>
+  );
+}
+
 export function Login() {
-  const { login } = useAuth();
+  const { login, completeMfa } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [mfaToken, setMfaToken] = useState(null);
+  const [code, setCode] = useState("");
 
   async function onSubmit(e) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const u = await login(email.trim(), password);
+      const r = await login(email.trim(), password);
+      if (r.mfaRequired) {
+        setMfaToken(r.mfaToken);
+        setBusy(false);
+        return;
+      }
+      showToast(`Welcome back, ${r.user.full_name.split(" ")[0]}!`, "👋");
+      navigate(location.state?.from ?? "/", { replace: true });
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  async function onMfaSubmit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const u = await completeMfa(mfaToken, code.trim());
       showToast(`Welcome back, ${u.full_name.split(" ")[0]}!`, "👋");
       navigate(location.state?.from ?? "/", { replace: true });
     } catch (err) {
       setError(err.message);
       setBusy(false);
     }
+  }
+
+  if (mfaToken) {
+    return (
+      <AuthCard eyebrow="Two-factor check" title="Enter your code" subtitle="Open your authenticator app, or use a recovery code.">
+        <form onSubmit={onMfaSubmit} className="space-y-4">
+          <Field label="Authentication code">
+            <input
+              className="field-input"
+              autoComplete="one-time-code"
+              required
+              minLength={6}
+              maxLength={24}
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </Field>
+          {error && <Notice kind="error">{error}</Notice>}
+          <button type="submit" className="btn-primary w-full py-3" disabled={busy}>
+            {busy ? "Verifying…" : "Verify and log in"}
+          </button>
+        </form>
+      </AuthCard>
+    );
   }
 
   return (
@@ -79,6 +144,7 @@ export function Login() {
           </Link>
         </p>
       </form>
+      <GoogleButton />
     </AuthCard>
   );
 }
@@ -158,6 +224,7 @@ export function Signup() {
           <Link to="/privacy">Privacy Policy</Link>.
         </p>
       </form>
+      <GoogleButton />
     </AuthCard>
   );
 }
@@ -285,11 +352,10 @@ export function ResetPassword() {
   );
 }
 
-export function Account() {
-  const { user, setUser } = useAuth();
+function ProfileSection({ user, setUser }) {
+  const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(user.full_name);
   const [phone, setPhone] = useState(user.phone ?? "");
-  const [verifySent, setVerifySent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -300,12 +366,142 @@ export function Account() {
     try {
       setUser(await api.updateMe({ full_name: fullName.trim(), phone: phone.trim() || null }));
       showToast("Profile saved", "✅");
+      setEditing(false);
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
   }
+
+  if (!editing) {
+    return (
+      <div className="border-t border-earth-border pt-6">
+        <div className="flex items-center justify-between">
+          <h2 className="field-label">Profile</h2>
+          <button type="button" className="text-xs font-semibold text-brand-terracotta underline" onClick={() => setEditing(true)}>
+            Edit profile
+          </button>
+        </div>
+        <dl className="mt-3 space-y-2 text-sm">
+          <div className="flex justify-between">
+            <dt className="text-earth-muted">Full name</dt>
+            <dd className="font-medium text-earth-slate">{user.full_name}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-earth-muted">Phone</dt>
+            <dd className="font-medium text-earth-slate">{user.phone || "—"}</dd>
+          </div>
+        </dl>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-4 border-t border-earth-border pt-6">
+      <h2 className="field-label">Edit profile</h2>
+      <Field label="Full name">
+        <input className="field-input" required maxLength={120} value={fullName} onChange={(e) => setFullName(e.target.value)} />
+      </Field>
+      <Field label="Phone">
+        <input className="field-input" type="tel" maxLength={20} value={phone} onChange={(e) => setPhone(e.target.value)} />
+      </Field>
+      {error && <Notice kind="error">{error}</Notice>}
+      <div className="flex gap-3">
+        <button type="submit" className="btn-primary flex-1" disabled={busy}>
+          {busy ? "Saving…" : "Save changes"}
+        </button>
+        <button
+          type="button"
+          className="px-4 rounded-xl border border-earth-border text-sm font-semibold text-earth-muted"
+          onClick={() => {
+            setFullName(user.full_name);
+            setPhone(user.phone ?? "");
+            setError(null);
+            setEditing(false);
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function UpiSection() {
+  const [seller, setSeller] = useState(null);
+  const [changing, setChanging] = useState(false);
+  const [password, setPassword] = useState("");
+  const [newUpi, setNewUpi] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [requested, setRequested] = useState(false);
+
+  useEffect(() => {
+    api.sellerMe().then(setSeller).catch(() => {});
+  }, []);
+
+  if (!seller) return null;
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.requestUpiChange(password, newUpi.trim());
+      setRequested(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-earth-border pt-6 mt-6">
+      <div className="flex items-center justify-between">
+        <h2 className="field-label">Payout UPI ID</h2>
+        {!changing && (
+          <button type="button" className="text-xs font-semibold text-brand-terracotta underline" onClick={() => setChanging(true)}>
+            Change UPI ID
+          </button>
+        )}
+      </div>
+      {!changing && <p className="mt-2 text-sm font-mono text-earth-slate">{seller.upi_id}</p>}
+      {changing &&
+        (requested ? (
+          <Notice kind="success">Check your email to confirm the UPI ID change. The link is valid for 1 hour.</Notice>
+        ) : (
+          <form onSubmit={onSubmit} className="mt-3 space-y-4">
+            <Notice kind="info">For your security, changing the UPI ID requires your password and an emailed confirmation link.</Notice>
+            <Field label="Current password">
+              <input className="field-input" type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+            <Field label="New UPI ID">
+              <input className="field-input" required maxLength={80} placeholder="name@okaxis" value={newUpi} onChange={(e) => setNewUpi(e.target.value)} />
+            </Field>
+            {error && <Notice kind="error">{error}</Notice>}
+            <div className="flex gap-3">
+              <button type="submit" className="btn-primary flex-1" disabled={busy}>
+                {busy ? "Sending…" : "Send confirmation email"}
+              </button>
+              <button
+                type="button"
+                className="px-4 rounded-xl border border-earth-border text-sm font-semibold text-earth-muted"
+                onClick={() => setChanging(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ))}
+    </div>
+  );
+}
+
+export function Account() {
+  const { user, setUser } = useAuth();
+  const [verifySent, setVerifySent] = useState(false);
 
   const sellerLine = {
     none: <Link to="/sell/apply">Apply to sell your crafts →</Link>,
@@ -346,18 +542,71 @@ export function Account() {
           <span className="text-earth-muted">Selling:</span> {sellerLine}
         </p>
       </div>
-      <form onSubmit={onSubmit} className="space-y-4 border-t border-earth-border pt-6">
-        <Field label="Full name">
-          <input className="field-input" required maxLength={120} value={fullName} onChange={(e) => setFullName(e.target.value)} />
-        </Field>
-        <Field label="Phone">
-          <input className="field-input" type="tel" maxLength={20} value={phone} onChange={(e) => setPhone(e.target.value)} />
-        </Field>
-        {error && <Notice kind="error">{error}</Notice>}
-        <button type="submit" className="btn-primary w-full" disabled={busy}>
-          {busy ? "Saving…" : "Save changes"}
-        </button>
-      </form>
+      <ProfileSection user={user} setUser={setUser} />
+      {user.seller_status === "approved" && <UpiSection />}
     </AuthCard>
   );
+}
+
+export function ConfirmUpiChange() {
+  const [params] = useSearchParams();
+  const [state, setState] = useState({ status: "working" });
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    const token = params.get("token");
+    if (!token) {
+      setState({ status: "error", message: "This confirmation link is incomplete." });
+      return;
+    }
+    api
+      .confirmUpiChange(token)
+      .then(() => setState({ status: "ok" }))
+      .catch((e) => setState({ status: "error", message: e.message }));
+  }, [params]);
+
+  if (state.status === "working") return <Spinner label="Confirming your UPI ID change…" />;
+  return (
+    <AuthCard
+      title={state.status === "ok" ? "UPI ID updated ✅" : "Couldn't confirm"}
+      subtitle={state.status === "ok" ? "Your new UPI ID is now active for future payouts." : state.message}
+    >
+      <Link to="/account" className="btn-primary w-full no-underline">
+        Back to your account
+      </Link>
+    </AuthCard>
+  );
+}
+
+export function GoogleComplete() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { reload } = useAuth();
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const ok = await api.refreshSession();
+      if (!ok) {
+        setFailed(true);
+        return;
+      }
+      await reload();
+      navigate(location.state?.from ?? "/", { replace: true });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (failed) {
+    return (
+      <AuthCard title="Couldn't sign you in" subtitle="Something went wrong completing Google sign-in.">
+        <Link to="/login" className="btn-primary w-full no-underline">
+          Back to log in
+        </Link>
+      </AuthCard>
+    );
+  }
+  return <Spinner label="Signing you in…" />;
 }

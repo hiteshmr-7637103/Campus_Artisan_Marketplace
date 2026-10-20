@@ -40,6 +40,7 @@ class SellerStatus(str, enum.Enum):
 class TokenPurpose(str, enum.Enum):
     verify_email = "verify_email"
     reset_password = "reset_password"
+    change_upi = "change_upi"
 
 
 class ListingStatus(str, enum.Enum):
@@ -59,8 +60,13 @@ class OrderStatus(str, enum.Enum):
 
 
 class PayoutStatus(str, enum.Enum):
-    pending = "pending"
+    pending = "pending"  # order fulfilled, inside the hold window
+    eligible = "eligible"  # hold window over, queued to be paid
+    processing = "processing"  # sent to the payout provider, awaiting confirmation
     paid = "paid"
+    failed = "failed"
+    on_hold = "on_hold"  # refund-flagged or an exception rule pulled it back for manual review
+    reversed = "reversed"
 
 
 def pg_enum(e: type[enum.Enum], name: str) -> Enum:
@@ -86,6 +92,19 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(pg_enum(UserRole, "user_role"), default=UserRole.buyer, server_default="buyer", nullable=False)
     seller_status: Mapped[SellerStatus] = mapped_column(pg_enum(SellerStatus, "seller_status"), default=SellerStatus.none, server_default="none", nullable=False)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    google_sub: Mapped[str | None] = mapped_column(String(50), unique=True)
+    totp_secret: Mapped[str | None] = mapped_column(String(64))
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    totp_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RecoveryCode(Base):
+    __tablename__ = "recovery_codes"
+    id: Mapped[uuid.UUID] = pk()
+    created_at: Mapped[datetime] = created()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RefreshToken(Base):
@@ -96,6 +115,7 @@ class RefreshToken(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mfa: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
 
 
 class AuthToken(Base):
@@ -124,6 +144,8 @@ class SellerPrivate(Base):
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     instagram: Mapped[str | None] = mapped_column(String(60))
     upi_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    upi_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pending_upi_id: Mapped[str | None] = mapped_column(String(80))
 
 
 class Category(Base):
@@ -200,15 +222,59 @@ class Payment(Base):
 
 
 class Payout(Base):
+    """One row per order (unique constraint). Status moves forward through the pipeline;
+    a monetary correction after the fact is a new PayoutAdjustment row, never an edit here."""
     __tablename__ = "payouts"
+    __table_args__ = (
+        CheckConstraint("commission_paise + amount_paise = gross_paise", name="payouts_amounts_add_up"),
+    )
     id: Mapped[uuid.UUID] = pk()
     created_at: Mapped[datetime] = created()
     order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orders.id"), unique=True, nullable=False)
     seller_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    amount_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    gross_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    commission_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    amount_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)  # net paid to seller
     status: Mapped[PayoutStatus] = mapped_column(pg_enum(PayoutStatus, "payout_status"), default=PayoutStatus.pending, server_default="pending", nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual", nullable=False)
+    eligible_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_exception: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    exception_reason: Mapped[str | None] = mapped_column(String(200))
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    failed_reason: Mapped[str | None] = mapped_column(String(200))
     upi_txn_ref: Mapped[str | None] = mapped_column(String(80))
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PayoutAdjustment(Base):
+    """Append-only corrections netted against the seller's next payout (reversals, refunds-after-payout)."""
+    __tablename__ = "payout_adjustments"
+    id: Mapped[uuid.UUID] = pk()
+    created_at: Mapped[datetime] = created()
+    seller_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    payout_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("payouts.id"))
+    order_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("orders.id"))
+    amount_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)  # negative = money owed back
+    reason: Mapped[str] = mapped_column(String(200), nullable=False)
+    settled_in_payout_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("payouts.id"))
+
+
+class PayoutStatement(Base):
+    """Weekly per-seller summary, snapshotted so it stays stable even if later payouts change."""
+    __tablename__ = "payout_statements"
+    __table_args__ = (UniqueConstraint("seller_id", "period_start", name="uq_statement_seller_period"),)
+    id: Mapped[uuid.UUID] = pk()
+    created_at: Mapped[datetime] = created()
+    seller_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    lines: Mapped[dict] = mapped_column(JSONB, nullable=False)  # snapshotted rows, see services/statements.py
+    gross_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    commission_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    net_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    paid_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    pending_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    held_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class Review(Base):

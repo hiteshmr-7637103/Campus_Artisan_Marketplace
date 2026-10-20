@@ -4,13 +4,14 @@ import { Guard } from "./lib/auth";
 import { Home } from "./pages/Home";
 import { Product } from "./pages/Product";
 import { SellerProfile } from "./pages/SellerProfile";
-import { Account, ForgotPassword, Login, ResetPassword, Signup, VerifyEmail } from "./pages/auth";
+import { Account, ConfirmUpiChange, ForgotPassword, GoogleComplete, Login, ResetPassword, Signup, VerifyEmail } from "./pages/auth";
 import { Checkout, CheckoutReturn, MockPay } from "./pages/Checkout";
 import { OrderDetail, Orders } from "./pages/Orders";
 import { SellApply } from "./pages/seller/SellApply";
 import { SellerStudio } from "./pages/seller/SellerStudio";
 import { ListingForm } from "./pages/seller/ListingForm";
 import { Admin } from "./pages/admin/Admin";
+import { Admin2fa } from "./pages/admin/Admin2fa";
 import { Privacy } from "./pages/Privacy";
 import { Terms } from "./pages/Terms";
 import { NotFound } from "./pages/NotFound";
@@ -30,7 +31,9 @@ export default function App() {
         <Route path="verify-email" element={<VerifyEmail />} />
         <Route path="forgot-password" element={<ForgotPassword />} />
         <Route path="reset-password" element={<ResetPassword />} />
+        <Route path="auth/google/complete" element={<GoogleComplete />} />
         <Route path="account" element={<Guard><Account /></Guard>} />
+        <Route path="account/confirm-upi" element={<Guard><ConfirmUpiChange /></Guard>} />
 
         <Route path="checkout/return" element={<Guard><CheckoutReturn /></Guard>} />
         <Route path="checkout/:listingId" element={<Guard><Checkout /></Guard>} />
@@ -43,6 +46,7 @@ export default function App() {
         <Route path="sell/listings/new" element={<Guard need="seller"><ListingForm /></Guard>} />
         <Route path="sell/listings/:id/edit" element={<Guard need="seller"><ListingForm /></Guard>} />
 
+        <Route path="admin/2fa" element={<Guard need="admin"><Admin2fa /></Guard>} />
         <Route path="admin/*" element={<Guard need="admin"><Admin /></Guard>} />
 
         <Route path="privacy" element={<Privacy />} />
