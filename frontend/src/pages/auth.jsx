@@ -5,6 +5,58 @@ import { useAuth } from "../lib/auth";
 import { showToast } from "../lib/toast";
 import { Field, Notice, Spinner } from "../components/ui";
 
+const DEMO_TEST_USERS = [
+  {
+    name: "Asha Rao",
+    role: "Jewelry Maker (4 listings)",
+    email: "asha@example.com",
+    avatar: "💎",
+    tag: "Artisan",
+  },
+  {
+    name: "Ravi Kumar",
+    role: "Pottery & Ceramics (4 listings)",
+    email: "ravi@example.com",
+    avatar: "🏺",
+    tag: "Artisan",
+  },
+  {
+    name: "Meera Sen",
+    role: "Dorm Decor & Art (4 listings)",
+    email: "meera@example.com",
+    avatar: "🎨",
+    tag: "Artisan",
+  },
+  {
+    name: "Diya Patel",
+    role: "Textiles & Crochet (4 listings)",
+    email: "diya@example.com",
+    avatar: "🧶",
+    tag: "Artisan",
+  },
+  {
+    name: "Arjun Varma",
+    role: "Craft & Leather (4 listings)",
+    email: "arjun@example.com",
+    avatar: "👜",
+    tag: "Artisan",
+  },
+  {
+    name: "Kavya Sharma",
+    role: "Active Student Buyer",
+    email: "kavya@example.com",
+    avatar: "🛍️",
+    tag: "Buyer",
+  },
+  {
+    name: "Campus Admin",
+    role: "Market Moderator",
+    email: "admin@example.com",
+    avatar: "🛡️",
+    tag: "Admin",
+  },
+];
+
 function AuthCard({ eyebrow, title, subtitle, children, footer }) {
   return (
     <div className="max-w-md mx-auto px-4 py-12 sm:py-16">
@@ -34,15 +86,33 @@ function GoogleButton() {
     <>
       <div className="my-5 flex items-center gap-3 text-xs text-earth-muted">
         <span className="h-px flex-1 bg-earth-border" />
-        or
+        or continue with
         <span className="h-px flex-1 bg-earth-border" />
       </div>
       <button
         type="button"
-        className="w-full rounded-xl border border-earth-border bg-white py-3 text-sm font-semibold text-earth-slate hover:bg-brand-clayLight"
+        className="w-full flex items-center justify-center gap-3 rounded-xl border border-earth-border bg-white py-3 text-sm font-semibold text-earth-slate hover:bg-brand-clayLight transition shadow-2xs"
         onClick={() => (window.location.href = api.googleLoginUrl())}
       >
-        Continue with Google
+        <svg className="w-4 h-4" viewBox="0 0 24 24">
+          <path
+            fill="#4285F4"
+            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+          />
+          <path
+            fill="#34A853"
+            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+          />
+          <path
+            fill="#FBBC05"
+            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+          />
+          <path
+            fill="#EA4335"
+            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+          />
+        </svg>
+        <span>Continue with Google</span>
       </button>
     </>
   );
@@ -58,6 +128,61 @@ export function Login() {
   const [error, setError] = useState(null);
   const [mfaToken, setMfaToken] = useState(null);
   const [code, setCode] = useState("");
+  const [activeChip, setActiveChip] = useState(null);
+
+  const redirectFrom = location.state?.from || "";
+  let redirectBanner = null;
+
+  if (redirectFrom.includes("/wishlist")) {
+    redirectBanner = {
+      title: "Log in to access your Wishlist",
+      description: "Please sign in with your college account to view and save unique student crafts to your collection.",
+      icon: "❤️",
+      badge: "Wishlist Protected",
+    };
+  } else if (redirectFrom.includes("/cart")) {
+    redirectBanner = {
+      title: "Log in to view your Shopping Bag",
+      description: "Please sign in with your college account to view your bag, reserve handcrafted items, and coordinate campus quad pickups.",
+      icon: "🛍️",
+      badge: "Cart Protected",
+    };
+  } else if (redirectFrom.includes("/checkout")) {
+    redirectBanner = {
+      title: "Log in to proceed with Checkout",
+      description: "Please sign in to select your campus pickup hub and complete your order with student makers.",
+      icon: "💳",
+      badge: "Checkout Protected",
+    };
+  } else if (redirectFrom.includes("/orders")) {
+    redirectBanner = {
+      title: "Log in to view your Orders",
+      description: "Please sign in to check your order fulfillment and student artisan contact details.",
+      icon: "📦",
+      badge: "Orders Protected",
+    };
+  } else if (redirectFrom && redirectFrom !== "/") {
+    redirectBanner = {
+      title: "Please log in to proceed",
+      description: "You must be signed in with a campus account to access this page.",
+      icon: "🔒",
+      badge: "Login Required",
+    };
+  }
+
+  useEffect(() => {
+    if (redirectBanner) {
+      showToast(redirectBanner.title, redirectBanner.icon);
+    }
+  }, [redirectFrom]);
+
+  function handleQuickFill(user) {
+    setEmail(user.email);
+    setPassword("demo-password-1");
+    setActiveChip(user.email);
+    setError(null);
+    showToast(`Loaded ${user.name}'s test credentials!`, user.avatar);
+  }
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -118,37 +243,189 @@ export function Login() {
   }
 
   return (
-    <AuthCard
-      eyebrow="Welcome back"
-      title="Log in to CampCraft"
-      footer={
-        <>
-          New here?{" "}
-          <Link to="/signup" state={location.state} className="font-semibold text-brand-terracotta">
-            Create an account
-          </Link>
-        </>
-      }
-    >
-      <form onSubmit={onSubmit} className="space-y-4">
-        <Field label="College email">
-          <input className="field-input" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        </Field>
-        <Field label="Password">
-          <input className="field-input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-        </Field>
-        {error && <Notice kind="error">{error}</Notice>}
-        <button type="submit" className="btn-primary w-full py-3" disabled={busy}>
-          {busy ? "Logging in…" : "Log in"}
-        </button>
-        <p className="text-center text-xs">
-          <Link to="/forgot-password" className="text-earth-muted hover:text-brand-terracotta">
-            Forgot your password?
-          </Link>
-        </p>
-      </form>
-      <GoogleButton />
-    </AuthCard>
+    <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+        {/* Left Col: Authentic Marketplace Hero Showcase */}
+        <div className="lg:col-span-5 rounded-3xl bg-[#9E3E1B] bg-gradient-to-br from-[#C85A32] via-[#A94825] to-[#3E1B0F] p-6 sm:p-10 text-white flex flex-col justify-between relative overflow-hidden shadow-xl">
+          {/* Subtle Decorative Pattern */}
+          <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
+          
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-4 sm:mb-6">
+              <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white">
+                🎓 Campus Artisan Collective
+              </span>
+            </div>
+            <h2 className="font-editorial text-2xl sm:text-4xl font-bold leading-tight tracking-tight">
+              Crafted by students. Cherished on campus.
+            </h2>
+            <p className="mt-3 sm:mt-4 text-xs sm:text-sm text-white/80 leading-relaxed font-sans">
+              Log in to explore handmade ceramics, custom jewelry, dorm decor, and handwoven textiles crafted right in your campus residence halls.
+            </p>
+          </div>
+
+          <div className="my-6 hidden sm:block relative z-10 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4.5">
+            <p className="text-xs text-white/95 italic leading-relaxed">
+              "CampCraft made it effortless to sell my hand-thrown ceramic mugs to fellow students directly on the quad without expensive delivery fees."
+            </p>
+            <div className="mt-3 flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">
+                🏺
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white">Ravi Kumar</p>
+                <p className="text-[10px] text-white/70">Pottery Artisan • Dept. of Fine Arts</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative z-10 mt-4 sm:mt-0 space-y-1.5 sm:space-y-2 text-xs font-medium text-white/90">
+            <div className="flex items-center gap-2">
+              <span className="text-amber-300">✓</span>
+              <span>100% In-person quad & dorm handoffs</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-amber-300">✓</span>
+              <span>Direct student payouts via instant UPI</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-amber-300">✓</span>
+              <span>Verified university email community</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Col: Login Form + Quick Demo Account Switcher */}
+        <div className="lg:col-span-7 bg-white rounded-3xl border border-earth-border p-5 sm:p-10 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h1 className="font-editorial text-2xl sm:text-3xl font-bold text-earth-slate">
+                  Welcome back
+                </h1>
+                <p className="text-xs sm:text-sm text-earth-muted mt-1">
+                  Enter your credentials or choose a test account below.
+                </p>
+              </div>
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-brand-terracotta text-white flex items-center justify-center font-editorial text-lg sm:text-xl font-bold shadow-md shadow-brand-terracotta/20">
+                C
+              </div>
+            </div>
+
+            {/* Prominent Authentication Required Banner */}
+            {redirectBanner && (
+              <div className="my-4 p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 flex items-start gap-3.5 shadow-2xs animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="w-9 h-9 rounded-xl bg-amber-200/70 border border-amber-300 flex items-center justify-center text-lg shrink-0 shadow-2xs">
+                  {redirectBanner.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-200 text-amber-900">
+                      {redirectBanner.badge}
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold text-earth-slate mt-1">
+                    {redirectBanner.title}
+                  </p>
+                  <p className="text-xs text-earth-muted mt-0.5 leading-relaxed">
+                    {redirectBanner.description}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Quick Demo Test Accounts Accordion/Grid */}
+            <div className="my-4 sm:my-6 p-3 sm:p-4 rounded-2xl bg-[#FAF7F2] border border-earth-border">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-earth-slate flex items-center gap-1.5">
+                  <span className="text-brand-terracotta">⚡</span> Quick Test Accounts (1-Click Fill)
+                </span>
+                <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded-full border border-earth-border text-earth-muted hidden sm:inline">
+                  pw: demo-password-1
+                </span>
+              </div>
+              <p className="text-[11px] text-earth-muted mb-2.5">
+                Click any profile to test different roles, seller studios, or buyer checkout:
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
+                {DEMO_TEST_USERS.map((u) => {
+                  const isSelected = activeChip === u.email;
+                  return (
+                    <button
+                      key={u.email}
+                      type="button"
+                      onClick={() => handleQuickFill(u)}
+                      className={`text-left p-2 sm:p-2.5 rounded-xl border transition-all text-xs flex flex-col justify-between min-w-0 ${
+                        isSelected
+                          ? "bg-brand-clayLight border-brand-terracotta text-brand-clayDark shadow-xs ring-1 ring-brand-terracotta"
+                          : "bg-white border-earth-border hover:border-brand-terracotta/60 hover:bg-stone-50 text-earth-slate"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold truncate">
+                        <span>{u.avatar}</span>
+                        <span className="truncate">{u.name}</span>
+                      </div>
+                      <div className="text-[10px] text-earth-muted truncate mt-0.5">
+                        {u.role}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <form onSubmit={onSubmit} className="space-y-4">
+              <Field label="College email">
+                <input
+                  className="field-input"
+                  type="email"
+                  autoComplete="username"
+                  required
+                  placeholder="e.g. asha@example.com"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setActiveChip(null);
+                  }}
+                />
+              </Field>
+              <Field label="Password">
+                <input
+                  className="field-input"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+              {error && <Notice kind="error">{error}</Notice>}
+              <button
+                type="submit"
+                className="btn-primary w-full py-3.5 text-base font-semibold transition-all hover:shadow-md"
+                disabled={busy}
+              >
+                {busy ? "Logging in…" : "Log in to CampCraft"}
+              </button>
+              <div className="flex items-center justify-between text-xs pt-1">
+                <span className="text-earth-muted">
+                  New student maker?{" "}
+                  <Link to="/signup" state={location.state} className="font-semibold text-brand-terracotta hover:underline">
+                    Create account
+                  </Link>
+                </span>
+                <Link to="/forgot-password" className="text-earth-muted hover:text-brand-terracotta">
+                  Forgot password?
+                </Link>
+              </div>
+            </form>
+
+            <GoogleButton />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -192,43 +469,138 @@ export function Signup() {
   }
 
   return (
-    <AuthCard
-      eyebrow="Join the collective"
-      title="Create your account"
-      subtitle="One account to buy crafts — and to sell your own once approved."
-      footer={
-        <>
-          Already have an account?{" "}
-          <Link to="/login" className="font-semibold text-brand-terracotta">
-            Log in
-          </Link>
-        </>
-      }
-    >
-      <form onSubmit={onSubmit} className="space-y-4">
-        <Field label="Full name">
-          <input className="field-input" required maxLength={120} autoComplete="name" value={form.full_name} onChange={set("full_name")} />
-        </Field>
-        <Field label="College email">
-          <input className="field-input" type="email" required autoComplete="email" value={form.email} onChange={set("email")} />
-        </Field>
-        <Field label="Phone (optional)">
-          <input className="field-input" type="tel" maxLength={20} autoComplete="tel" value={form.phone} onChange={set("phone")} />
-        </Field>
-        <Field label="Password" hint="At least 8 characters.">
-          <input className="field-input" type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={form.password} onChange={set("password")} />
-        </Field>
-        {error && <Notice kind="error">{error}</Notice>}
-        <button type="submit" className="btn-primary w-full py-3" disabled={busy}>
-          {busy ? "Creating account…" : "Create account"}
-        </button>
-        <p className="text-center text-[11px] text-earth-muted">
-          By signing up you agree to the <Link to="/terms">Campus Guidelines</Link> and{" "}
-          <Link to="/privacy">Privacy Policy</Link>.
-        </p>
-      </form>
-      <GoogleButton />
-    </AuthCard>
+    <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+        {/* Left Column: Campus Artisan Value Props */}
+        <div className="lg:col-span-5 rounded-3xl bg-[#243329] bg-gradient-to-br from-[#2E3C32] via-[#243329] to-[#162019] p-6 sm:p-10 text-white flex flex-col justify-between relative overflow-hidden shadow-xl">
+          <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
+
+          <div className="relative z-10">
+            <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white">
+              🌿 Join the Collective
+            </span>
+            <h2 className="font-editorial text-2xl sm:text-4xl font-bold leading-tight tracking-tight mt-4 sm:mt-6">
+              One account for campus buyers and makers.
+            </h2>
+            <p className="mt-3 sm:mt-4 text-xs sm:text-sm text-white/80 leading-relaxed font-sans">
+              Discover one-of-a-kind student artwork, save crafts to your wishlist, or apply to open your own dorm studio in minutes.
+            </p>
+          </div>
+
+          <div className="my-6 hidden sm:grid relative z-10 grid-cols-2 gap-3">
+            <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15">
+              <span className="text-xl font-bold text-amber-300 font-editorial">₹0</span>
+              <p className="text-xs font-semibold text-white mt-1">Listing Fees</p>
+              <p className="text-[10px] text-white/70">List your crafts free forever</p>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15">
+              <span className="text-xl font-bold text-emerald-300 font-editorial">10+</span>
+              <p className="text-xs font-semibold text-white mt-1">Quad Hubs</p>
+              <p className="text-[10px] text-white/70">Safe in-person pickup points</p>
+            </div>
+          </div>
+
+          <div className="relative z-10 mt-4 sm:mt-0 space-y-1.5 sm:space-y-2 text-xs font-medium text-white/90">
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-400">✓</span>
+              <span>Exclusive student discounts with code STUDENT10</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-400">✓</span>
+              <span>Fast-track seller studio approval</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Registration Form */}
+        <div className="lg:col-span-7 bg-white rounded-3xl border border-earth-border p-5 sm:p-10 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h1 className="font-editorial text-2xl sm:text-3xl font-bold text-earth-slate">
+                  Create your account
+                </h1>
+                <p className="text-xs sm:text-sm text-earth-muted mt-1">
+                  Join our campus artisan network in less than 60 seconds.
+                </p>
+              </div>
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-accent-sage text-white flex items-center justify-center font-editorial text-lg sm:text-xl font-bold shadow-md shadow-accent-sage/20">
+                🌿
+              </div>
+            </div>
+
+            <form onSubmit={onSubmit} className="space-y-4 mt-6">
+              <Field label="Full name">
+                <input
+                  className="field-input"
+                  required
+                  maxLength={120}
+                  autoComplete="name"
+                  placeholder="e.g. Diya Patel"
+                  value={form.full_name}
+                  onChange={set("full_name")}
+                />
+              </Field>
+              <Field label="College email" hint="Use your student or faculty email">
+                <input
+                  className="field-input"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  placeholder="e.g. diya@campus.edu"
+                  value={form.email}
+                  onChange={set("email")}
+                />
+              </Field>
+              <Field label="Phone number (for quad pickup alerts)">
+                <input
+                  className="field-input"
+                  type="tel"
+                  maxLength={20}
+                  autoComplete="tel"
+                  placeholder="+91 98765 43210"
+                  value={form.phone}
+                  onChange={set("phone")}
+                />
+              </Field>
+              <Field label="Password" hint="At least 8 characters">
+                <input
+                  className="field-input"
+                  type="password"
+                  required
+                  minLength={8}
+                  maxLength={128}
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                  value={form.password}
+                  onChange={set("password")}
+                />
+              </Field>
+              {error && <Notice kind="error">{error}</Notice>}
+              <button
+                type="submit"
+                className="btn-primary w-full py-3.5 text-base font-semibold hover:shadow-md transition-all"
+                disabled={busy}
+              >
+                {busy ? "Creating your account…" : "Create Campus Account"}
+              </button>
+              <p className="text-center text-xs text-earth-muted">
+                Already have an account?{" "}
+                <Link to="/login" className="font-semibold text-brand-terracotta hover:underline">
+                  Log in
+                </Link>
+              </p>
+              <p className="text-center text-[11px] text-earth-muted">
+                By joining you agree to the <Link to="/terms" className="underline">Campus Honor Code</Link> and{" "}
+                <Link to="/privacy" className="underline">Privacy Policy</Link>.
+              </p>
+            </form>
+
+            <GoogleButton />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -503,7 +875,8 @@ function UpiSection() {
 }
 
 export function Account() {
-  const { user, setUser } = useAuth();
+  const { user, setUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [verifySent, setVerifySent] = useState(false);
 
   const sellerLine = {
@@ -547,6 +920,30 @@ export function Account() {
       </div>
       <ProfileSection user={user} setUser={setUser} />
       {user.seller_status === "approved" && <UpiSection />}
+
+      {/* Account Session & Log Out */}
+      <div className="mt-8 pt-6 border-t border-earth-border">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-stone-50 border border-earth-border/80">
+          <div>
+            <p className="text-sm font-semibold text-earth-slate">Account Session</p>
+            <p className="text-xs text-earth-muted">Signed in as {user.email}</p>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              await logout();
+              showToast("You have been logged out.", "👋");
+              navigate("/");
+            }}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition shadow-2xs active:scale-95 cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span>Log Out of Session</span>
+          </button>
+        </div>
+      </div>
     </AuthCard>
   );
 }

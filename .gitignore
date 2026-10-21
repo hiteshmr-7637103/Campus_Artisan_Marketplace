@@ -29,5 +29,6 @@ npm-debug.log*
 
 # claude plan scratch
 .claude/
+stitch_campcraft_marketplace/
 
 

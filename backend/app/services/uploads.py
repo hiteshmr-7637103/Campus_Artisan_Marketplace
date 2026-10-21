@@ -40,4 +40,6 @@ def delete_image(rel: str) -> None:
 
 
 def image_url(rel: str) -> str:
+    if rel.startswith("http://") or rel.startswith("https://") or rel.startswith("data:"):
+        return rel
     return f"{get_settings().public_api_url.rstrip('/')}/uploads/{rel}"
