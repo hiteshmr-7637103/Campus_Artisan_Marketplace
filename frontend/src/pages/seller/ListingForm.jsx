@@ -79,6 +79,7 @@ export function ListingForm() {
         const wasRejected = listing.status === "rejected";
         setListing(await updateListing(listing.id, body));
         showToast(wasRejected ? "Resubmitted for review" : "Changes saved", "✅");
+        navigate("/sell");
       }
     } catch (err) {
       setError(err.message);
