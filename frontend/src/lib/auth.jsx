@@ -4,37 +4,69 @@ import * as api from "./api";
 import { Spinner } from "../components/ui";
 
 const AuthContext = createContext(null);
+const USER_KEY = "campcraft_user";
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUserState] = useState(() => {
+    try {
+      const saved = typeof window !== "undefined" ? sessionStorage.getItem(USER_KEY) : null;
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    // If we already have a user in session storage, don't block render with loading spinner
+    return typeof window !== "undefined" ? !sessionStorage.getItem(USER_KEY) : true;
+  });
+
+  const setUser = useCallback((u) => {
+    setUserState(u);
+    try {
+      if (typeof window !== "undefined") {
+        if (u) sessionStorage.setItem(USER_KEY, JSON.stringify(u));
+        else sessionStorage.removeItem(USER_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
-    // Restore the session from the httpOnly refresh cookie, if there is one.
+    let cancelled = false;
     (async () => {
-      if (await api.refreshSession()) {
-        try {
-          setUser(await api.getMe());
-        } catch {
-          /* not logged in */
+      try {
+        if (await api.refreshSession()) {
+          try {
+            const me = await api.getMe();
+            if (!cancelled) setUser(me);
+          } catch {
+            /* could not fetch profile */
+          }
+        } else if (!api.hasSession()) {
+          if (!cancelled) setUser(null);
         }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     })();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [setUser]);
 
   const login = useCallback(async (email, password) => {
     const r = await api.login(email, password);
     if (r.mfaRequired) return r;
     setUser(r.user);
     return r;
-  }, []);
+  }, [setUser]);
 
   const completeMfa = useCallback(async (mfaToken, code) => {
     const u = await api.verifyAdmin2fa(mfaToken, code);
     setUser(u);
     return u;
-  }, []);
+  }, [setUser]);
 
   const logout = useCallback(async () => {
     try {
@@ -42,7 +74,7 @@ export function AuthProvider({ children }) {
     } finally {
       setUser(null);
     }
-  }, []);
+  }, [setUser]);
 
   const reload = useCallback(async () => {
     if (!api.hasSession()) return; // e.g. verifying an email while logged out
@@ -51,7 +83,7 @@ export function AuthProvider({ children }) {
     } catch {
       setUser(null);
     }
-  }, []);
+  }, [setUser]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, completeMfa, logout, reload, setUser }}>

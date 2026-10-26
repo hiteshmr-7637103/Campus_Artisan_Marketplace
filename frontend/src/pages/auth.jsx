@@ -4,59 +4,6 @@ import * as api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { showToast } from "../lib/toast";
 import { Field, Notice, Spinner } from "../components/ui";
-
-const DEMO_TEST_USERS = [
-  {
-    name: "Asha Rao",
-    role: "Jewelry Maker (4 listings)",
-    email: "asha@example.com",
-    avatar: "💎",
-    tag: "Artisan",
-  },
-  {
-    name: "Ravi Kumar",
-    role: "Pottery & Ceramics (4 listings)",
-    email: "ravi@example.com",
-    avatar: "🏺",
-    tag: "Artisan",
-  },
-  {
-    name: "Meera Sen",
-    role: "Dorm Decor & Art (4 listings)",
-    email: "meera@example.com",
-    avatar: "🎨",
-    tag: "Artisan",
-  },
-  {
-    name: "Diya Patel",
-    role: "Textiles & Crochet (4 listings)",
-    email: "diya@example.com",
-    avatar: "🧶",
-    tag: "Artisan",
-  },
-  {
-    name: "Arjun Varma",
-    role: "Craft & Leather (4 listings)",
-    email: "arjun@example.com",
-    avatar: "👜",
-    tag: "Artisan",
-  },
-  {
-    name: "Kavya Sharma",
-    role: "Active Student Buyer",
-    email: "kavya@example.com",
-    avatar: "🛍️",
-    tag: "Buyer",
-  },
-  {
-    name: "Campus Admin",
-    role: "Market Moderator",
-    email: "admin@example.com",
-    avatar: "🛡️",
-    tag: "Admin",
-  },
-];
-
 function AuthCard({ eyebrow, title, subtitle, children, footer }) {
   return (
     <div className="max-w-md mx-auto px-4 py-12 sm:py-16">
@@ -128,7 +75,6 @@ export function Login() {
   const [error, setError] = useState(null);
   const [mfaToken, setMfaToken] = useState(null);
   const [code, setCode] = useState("");
-  const [activeChip, setActiveChip] = useState(null);
 
   const redirectFrom = location.state?.from || "";
   let redirectBanner = null;
@@ -175,14 +121,6 @@ export function Login() {
       showToast(redirectBanner.title, redirectBanner.icon);
     }
   }, [redirectFrom]);
-
-  function handleQuickFill(user) {
-    setEmail(user.email);
-    setPassword("demo-password-1");
-    setActiveChip(user.email);
-    setError(null);
-    showToast(`Loaded ${user.name}'s test credentials!`, user.avatar);
-  }
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -304,7 +242,7 @@ export function Login() {
                   Welcome back
                 </h1>
                 <p className="text-xs sm:text-sm text-earth-muted mt-1">
-                  Enter your credentials or choose a test account below.
+                  Enter your credentials to access your account.
                 </p>
               </div>
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-brand-terracotta text-white flex items-center justify-center font-editorial text-lg sm:text-xl font-bold shadow-md shadow-brand-terracotta/20">
@@ -334,46 +272,6 @@ export function Login() {
               </div>
             )}
 
-            {/* Quick Demo Test Accounts Accordion/Grid */}
-            <div className="my-4 sm:my-6 p-3 sm:p-4 rounded-2xl bg-[#FAF7F2] border border-earth-border">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-earth-slate flex items-center gap-1.5">
-                  <span className="text-brand-terracotta">⚡</span> Quick Test Accounts (1-Click Fill)
-                </span>
-                <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded-full border border-earth-border text-earth-muted hidden sm:inline">
-                  pw: demo-password-1
-                </span>
-              </div>
-              <p className="text-[11px] text-earth-muted mb-2.5">
-                Click any profile to test different roles, seller studios, or buyer checkout:
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
-                {DEMO_TEST_USERS.map((u) => {
-                  const isSelected = activeChip === u.email;
-                  return (
-                    <button
-                      key={u.email}
-                      type="button"
-                      onClick={() => handleQuickFill(u)}
-                      className={`text-left p-2 sm:p-2.5 rounded-xl border transition-all text-xs flex flex-col justify-between min-w-0 ${
-                        isSelected
-                          ? "bg-brand-clayLight border-brand-terracotta text-brand-clayDark shadow-xs ring-1 ring-brand-terracotta"
-                          : "bg-white border-earth-border hover:border-brand-terracotta/60 hover:bg-stone-50 text-earth-slate"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 font-bold truncate">
-                        <span>{u.avatar}</span>
-                        <span className="truncate">{u.name}</span>
-                      </div>
-                      <div className="text-[10px] text-earth-muted truncate mt-0.5">
-                        {u.role}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
             <form onSubmit={onSubmit} className="space-y-4">
               <Field label="College email">
                 <input
@@ -383,10 +281,7 @@ export function Login() {
                   required
                   placeholder="e.g. asha@example.com"
                   value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setActiveChip(null);
-                  }}
+                  onChange={(e) => setEmail(e.target.value)}
                 />
               </Field>
               <Field label="Password">

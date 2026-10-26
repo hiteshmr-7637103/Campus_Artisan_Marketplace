@@ -10,19 +10,31 @@ export class ApiError extends Error {
   }
 }
 
-// The access token lives in memory only. The refresh token is an httpOnly cookie the JS never sees.
-let accessToken = null;
+const TOKEN_KEY = "campcraft_access_token";
+let accessToken = typeof window !== "undefined" ? sessionStorage.getItem(TOKEN_KEY) : null;
 let refreshing = null;
 
 export const hasSession = () => accessToken !== null;
+
+export function setAccessToken(token) {
+  accessToken = token;
+  if (typeof window !== "undefined") {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  }
+}
 
 // Concurrent callers share one refresh (refresh tokens rotate, so a second parallel call would fail).
 export function refreshSession() {
   refreshing ??= (async () => {
     try {
       const res = await fetch(`${API_URL}/auth/refresh`, { method: "POST", credentials: "include" });
-      if (!res.ok) return false;
-      accessToken = (await res.json()).access_token;
+      if (!res.ok) {
+        if (res.status === 401) setAccessToken(null);
+        return false;
+      }
+      const data = await res.json();
+      setAccessToken(data.access_token);
       return true;
     } catch {
       return false;
@@ -50,7 +62,7 @@ async function request(path, { json, retry = true, ...init } = {}) {
   }
 
   // Access tokens expire after 15 minutes: refresh once and retry.
-  if (res.status === 401 && retry && accessToken && !path.startsWith("/auth/")) {
+  if (res.status === 401 && retry && !path.startsWith("/auth/")) {
     if (await refreshSession()) return request(path, { json, retry: false, ...init });
   }
 
@@ -75,18 +87,18 @@ export const signup = (b) => post("/auth/signup", b);
 export async function login(email, password) {
   const r = await post("/auth/login", { email, password });
   if (r.mfa_required) return { mfaRequired: true, mfaToken: r.mfa_token };
-  accessToken = r.access_token;
+  setAccessToken(r.access_token);
   return { user: r.user };
 }
 export async function verifyAdmin2fa(mfaToken, code) {
   const r = await post("/auth/admin/2fa/verify", { mfa_token: mfaToken, code });
-  accessToken = r.access_token;
+  setAccessToken(r.access_token);
   return r.user;
 }
 export const admin2faEnroll = () => post("/auth/admin/2fa/enroll");
 export async function admin2faConfirm(code) {
   const r = await post("/auth/admin/2fa/confirm", { code });
-  accessToken = r.access_token; // the enrolling session predates 2FA; this one carries mfa=true
+  setAccessToken(r.access_token); // the enrolling session predates 2FA; this one carries mfa=true
   return r; // { user, recovery_codes, ... }
 }
 export const googleLoginUrl = () => `${API_URL}/auth/google/login`;
@@ -94,7 +106,7 @@ export async function logout() {
   try {
     await post("/auth/logout");
   } finally {
-    accessToken = null;
+    setAccessToken(null);
   }
 }
 export const verifyEmail = (token) => post("/auth/verify-email", { token });

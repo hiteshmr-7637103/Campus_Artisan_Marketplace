@@ -9,8 +9,14 @@ import { EmptyState, Notice, Spinner, useLoad } from "../components/ui";
 
 // Send the buyer to the payment page. In mock mode it's one of our own routes, so stay inside the SPA.
 function goToPayment(url, navigate) {
-  if (url.startsWith(window.location.origin)) navigate(url.slice(window.location.origin.length));
-  else window.location.assign(url);
+  if (url.includes("/mock-pay/")) {
+    const path = url.slice(url.indexOf("/mock-pay/"));
+    navigate(path);
+  } else if (url.startsWith(window.location.origin)) {
+    navigate(url.slice(window.location.origin.length));
+  } else {
+    window.location.assign(url);
+  }
 }
 
 export function Checkout() {
@@ -363,11 +369,15 @@ export function MockPay() {
 export function CheckoutReturn() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const orderId = params.get("order_id") ?? "";
+  const orderId = params.get("order_id") || params.get("razorpay_payment_link_reference_id") || "";
   const [timedOut, setTimedOut] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (!orderId) {
+      setError("No order reference provided. Please check My Orders to see your active orders.");
+      return;
+    }
     let cancelled = false;
     let tries = 0;
     async function poll() {
