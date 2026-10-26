@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     email_from: str = "Campus Artisans <onboarding@resend.dev>"
     upload_dir: str = "uploads"
+    image_storage_provider: str = "local"  # local | cloudinary
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
 
     payout_provider: str = "manual"  # manual | razorpayx
     payout_hold_hours: int = 36  # time after fulfilment before a payout becomes eligible
@@ -86,6 +90,12 @@ class Settings(BaseSettings):
             self.razorpay_key_id and self.razorpay_key_secret and self.razorpay_webhook_secret
         ):
             raise RuntimeError("Razorpay keys and webhook secret are required when PAYMENT_MODE=razorpay")
+        if self.image_storage_provider not in ("local", "cloudinary"):
+            raise RuntimeError("IMAGE_STORAGE_PROVIDER must be 'local' or 'cloudinary'")
+        if self.image_storage_provider == "cloudinary" and not (
+            self.cloudinary_cloud_name and self.cloudinary_api_key and self.cloudinary_api_secret
+        ):
+            raise RuntimeError("Cloudinary credentials are required when IMAGE_STORAGE_PROVIDER=cloudinary")
 
 
 @lru_cache
